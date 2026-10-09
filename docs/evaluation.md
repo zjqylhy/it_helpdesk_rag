@@ -51,6 +51,29 @@ uv run rag-eval adjudicate --run RUN_DIRECTORY --decisions DECISIONS.jsonl --out
 
 人工结果与自动评分同时保留。正式答案正确率要求所有可回答题都有人工判定，且失败、拒答或截断不能被标为成功回答。首轮最终方案 D 的 200 题需全量审核；后续变化/失败题与至少 40 条分层抽样审核的要求见技术方案。
 
+题目与原文的审核不等于本次实际答案的裁决；每轮生成都要保留独立审核状态。必要事实宜逐项列出，避免把账号、验证码、首次绑定和操作设备等条件混成一个事实。评委必须核对每项事实的全部条件；引用原文含有某条件，不能替代回答明确覆盖该条件。
+
+只复评已保存答案可使用 `judge DATASET --run OLD_RUN --out NEW_RUN --max-calls 40`。旧生成代码与提示版本保留，另记 `judge_commit`、`judge_prompt`、`judge_llm` 和来源清单校验值。当前事实评委提示版本为 `facts-v2`。不传 `--ragas` 时保留原忠实度结果，不重新计算该指标。
+
+## 多知识库开发集
+
+各知识库分别绑定快照、校验并发布。`eval/private/releases/dev-30-v1/index.json` 记录 7 个成员发布集与整体校验值，`all-cases.jsonl` 保存 30 题集合；单次 `run` 使用一个成员的题目与语料。以下命令从 `rag` 目录执行，输出必须为新目录：
+
+```powershell
+$evalRoot = (Resolve-Path ../eval/private/releases/dev-30-v1).Path
+$evalIndex = Get-Content (Join-Path $evalRoot index.json) -Raw | ConvertFrom-Json
+foreach ($member in $evalIndex.members) {
+    $evalCases = Join-Path $evalRoot $member.cases
+    $evalCorpus = Join-Path $evalRoot $member.corpus
+    uv run rag-eval run $evalCases --corpus $evalCorpus --variant all --out "../reports/dev-replay-retrieval/$($member.slug)" --max-calls 40
+    if ($LASTEXITCODE -ne 0) { throw "检索运行失败：$($member.slug)" }
+    uv run rag-eval run $evalCases --corpus $evalCorpus --mode end-to-end --variant D --judge --ragas --out "../reports/dev-replay-answers/$($member.slug)" --max-calls 60
+    if ($LASTEXITCODE -ne 0) { throw "端到端运行失败：$($member.slug)" }
+}
+```
+
+整体汇总按逐题记录及对应分母计算，不能平均各库的正确率；来源、数据集、代码和模型清单均须保留。30 题为开发集，可用于定位问题和调整提示；正式测试题须按事实主题独立划分。
+
 ## 指标解释
 
 - Recall@5 是每题必要证据组覆盖率再取平均；完整覆盖和 MRR 单独报告。
