@@ -14,7 +14,7 @@
 | 数据存储 | PostgreSQL + pgvector | 业务元数据、知识切片、向量和任务 |
 | 关键词检索 | rank_bm25 + 中文分词 | 在已发布知识快照内进行 BM25 检索 |
 | 文件存储 | 本地持久化卷 | 保存原文件和不可变版本，后续可替换对象存储 |
-| 模型 | qwen3.7-text-embedding + deepseek-v4-pro | 阿里 DashScope Embedding 适配器与 DeepSeek Chat Completions 适配器 |
+| 模型 | qwen3.7-text-embedding + qwen3.7-text-rerank + deepseek-v4-pro | Embedding、重排序及生成的独立 API 适配器 |
 | 部署 | Docker Compose | Windows 开发及可重复演示 |
 
 与原 PRD 的差异：采用其轻量 PostgreSQL/pgvector 路线，统一业务与向量存储；首期不引入 Milvus、MySQL、Redis、Kubernetes 或完整 LangChain/LlamaIndex。RAG 各环节用显式接口编排，保留替换能力。
@@ -66,18 +66,17 @@ Embedding 配置包含维度并在首次接入时校验返回值。先采用精�
 1. 校验会话归属，绑定知识快照；首次问题不改写，多轮问题使用有限历史进行指代消解。
 2. 用同一查询分别执行向量与 BM25 检索，各取候选；使用 RRF 合并排名，避免直接相加不同量纲的原始分数。
 3. 对候选做去重和重排，选取 Top-5 证据；Top-K 和上下文长度可配置。
-4. 进行证据相关性/可回答性判定。阈值在开发集上校准，不能把检索分数直接解释为答案正确概率。
+4. 进行证据可回答性判定；重排分数只用于本次请求内排序，不直接套用跨请求统一阈值。根据所选证据是否包含必要事实、组织和条件进行结构化判定，并在开发集上校准判定规则。
 5. 低证据分支返回拒答和终态，不输出编造答案；明显冲突则说明需要澄清的适用条件。
 6. 高证据分支把切片作为不可信资料交给模型，以 [C1] 等固定证据编号约束事实性回答，流式转发答案。
 7. 完成时校验引用编号及来源范围，保存引用快照。编号合法性校验不等同于事实支持校验；后者由离线评测及人工抽检完成。
 8. 引用不合法或事实性回答缺少引用时发出校验失败终态，界面将已输出内容标为未验证，不计为成功答案。
 
-### 重排序的待选方案
+### 重排序模型
 
-- 若用户已有 Reranker API，优先封装该 API。
-- 若只有现有大模型 API，可作为首期备选：对候选进行批量相关性排序，要求结构化返回合法候选编号。记录额外 Token、耗时和模型版本，与无重排链路做消融；不称其为 BGE 重排。
-- 若选择本地 BGE 重排，须先确定机器内存和模型运行条件，再锁定模型及 CPU/GPU 配置；不预先承诺其延迟。
-- 任一种方式均保留独立 Reranker 接口；故障时明确标记降级或返回失败，评测报告区分运行方式。
+用户已选择 qwen3.7-text-rerank。使用阿里原生 HTTP 重排接口；请求携带 input.query、input.documents 和 parameters.top_n，按响应 output.results 的 index 对齐候选 ID。官方说明 relevance_score 是当前请求内的相对分数。[重排接口](https://help.aliyun.com/zh/model-studio/text-rerank-api)
+
+初始配置为融合候选 Top-20 重排后取 Top-5，候选数与上下文预算均配置化。记录重排前后排序、耗时和用量；故障返回明确错误，实验中不得无标记地跳过重排。
 
 ## 6. 公共接口与流式事件
 
@@ -117,13 +116,14 @@ Web 使用支持 POST 和鉴权的 fetch 流读取，不依赖仅 GET 的原生 
 
 用户指定 qwen3.7-text-embedding。建议采用 DashScope 原生同步 HTTP 接口，显式设置 dimension=1024、output_type=dense；入库使用 text_type=document，查询使用 text_type=query。官方默认维度为 1024，单批最多 20 条；首期按短切片保守分批，不追求输入上限。[同步接口](https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api/)
 
-服务地址从本地配置读取，须使用账号对应的地域和业务空间 API Host。适配器根据 text_index 对齐返回向量，并记录实际 usage；入库与查询保持相同模型、维度和预处理版本。
+用户已提供北京业务空间 API Host。本地配置保存带 https 的主机根地址；Embedding 使用其 /api/v1/services/embeddings/text-embedding/text-embedding 路径，重排使用 /api/v1/services/rerank/text-rerank/text-rerank 路径。适配器根据 text_index 对齐返回向量，并记录实际 usage；入库与查询保持相同模型、维度和预处理版本。
 
 ### 7.3 接入验证计划
 
 - 配置齐备并进入编码阶段后，先用非敏感短文本验证两家 API 的实际可用性，不批量发送素材。
 - 检查 Embedding 返回向量数量、索引、维度、数值有效性和批量错误；错误不能自动切换模型或维度。
 - 检查 DeepSeek 的流式终态、Token 统计、超时与截断；区分空片段、答案正文及可能存在的思考字段。
+- 检查重排返回索引是否越界或重复、结果数量与候选对应关系及业务错误响应。
 - 文档核对不代表账号权限、额度或实际调用已经验证；当前未调用付费模型接口。
 
 ## 8. 验证与交付
@@ -136,21 +136,126 @@ Web 使用支持 POST 和鉴权的 fetch 流读取，不依赖仅 GET 的原生 
 - CI 默认执行无需模型凭据的验证；真实 API 全量评测手动触发并报告成本，后续有预算与稳定基线后再启用自动质量门禁。
 - 首期 CLI 输出 JSON 与 Markdown 评测报告，无需先建设业务看板。
 
+### 8.1 RAG 效果评测流程
+
+评测先回答两个问题：检索是否找到完整证据，以及模型是否根据证据答对。执行链路与 Web 问答共用检索、重排、可回答性判定和生成组件，避免单独写一个更容易答对的评测版 RAG。
+
+```text
+导出素材并上传 → 冻结原文版本 → 构造与人工确认黄金集
+                              ↓
+                      开发集校准参数和拒答规则
+                              ↓
+                      冻结配置与最终测试集
+                              ↓
+               四组检索实验 → 端到端生成与引用记录
+                              ↓
+                程序指标 + 模型辅助评分 + 人工复核
+                              ↓
+                     对比报告与失败样本归因
+                              ↓
+                 在开发集改进 → 新配置回归最终集
+```
+
+先用 20 条开发样本打通全流程，最终准备至少 30 条独立开发样本和 200 条冻结测试样本。按事实主题分组拆分，避免同一事实的改写问句同时用于调参和验收。测试集只用于报告结果；若根据测试失败样本调整策略，须记录该轮接触并增加新的未见验收样本。
+
+### 8.2 黄金样本与证据标注
+
+模型可根据原文辅助提出问题和参考答案，随后由人工确认出处、必要事实和预期行为；未经确认的生成样本不能充当验收真值。多轮样本需包含原始追问、固定历史和期望指代目标。
+
+| 字段 | 含义 |
+| --- | --- |
+| id、split、tags | 样本编号、开发/测试划分和场景分类 |
+| knowledge_base、corpus_version | 适用组织与冻结语料版本 |
+| question、history | 问题及可重放的多轮上下文 |
+| expected_behavior | answer、refuse 或 clarify |
+| reference_answer、required_facts | 参考答案、必须覆盖的事实和禁止出现的错误结论 |
+| evidence_groups | 每项必要事实的可接受证据；同组是等价来源，不同组是必须组合的证据 |
+| source_version、locator、quote | 原文件版本、页码/章节/段落及经确认的原文节选 |
+
+证据锚点基于原文，不以当前切片 ID 作为唯一标准。数据准备模块将证据锚点映射到本轮切片：完整包含所需原文的切片或可合并覆盖的相邻切片才能记为覆盖；仅同一页或同一标题不足以命中。重复和重叠切片只覆盖同一证据组一次，避免通过增加重叠抬高召回。
+
+### 8.3 对比实验
+
+| 实验 | 检索路径 | 目的 |
+| --- | --- | --- |
+| A | BM25 → Top-5 | 关键词基线 |
+| B | 向量 → Top-5 | 语义检索基线 |
+| C | 两路各 Top-20 → RRF → Top-5 | 衡量融合效果 |
+| D | 两路各 Top-20 → RRF Top-20 → Qwen 重排 → Top-5 | 衡量重排的增益与代价 |
+
+所有实验使用同一原文、切片、问题改写结果、最终 Top-K、上下文预算及生成 Prompt。多轮改写独立测量后在检索对比中共享结果，避免把改写随机差异算作重排增益。正式端到端评测则重放完整多轮路径，并包含改写耗时与错误。
+
+先跑全部四组的检索指标，再按所选实验进行端到端生成；完整验收对四组保存对应答案。在看测试结果前固定配置，用同一样本的成对差值比较，不挑选某次最好结果作为最终成绩。模型、切片与 Prompt 实验一次只变一个因素。
+
+### 8.4 指标与评分实现
+
+| 指标 | 实现 | 分母和解释 |
+| --- | --- | --- |
+| Recall@5 | 按证据锚点映射程序计算 | 可回答样本每题必要证据组覆盖率，再按题平均 |
+| 完整证据覆盖率 | Top-5 覆盖全部必要证据组的题数 / 可回答题数 | 防止多文档问题只找到一半证据仍被认为解决 |
+| MRR@5 | 程序计算首个相关证据的排名倒数 | 辅助衡量排序，不能替代完整证据覆盖率 |
+| 答案正确率 | 固定业务评分规则，模型逐事实辅助判定并人工复核 | 所有可回答题；完整且无错误结论计通过，部分正确、错误拒答和请求失败均不通过 |
+| Faithfulness | Ragas 将答案陈述与本次上下文做支持判断 | 完成生成且有可评估陈述的答案；无陈述、拒答、评分失败单独列出 |
+| 引用有效率 | 程序校验引用 ID、文档版本、快照与定位 | 实际引用数；没引用的回答不能借零分母记 100%，另外统计应引用回答的覆盖率 |
+| 引用支持率 | 逐事实陈述核对被引用证据，模型辅助与人工复核 | 被标注引用的事实性陈述；缺失引用另计 |
+| 拒答与澄清正确率 | 按 expected_behavior 和拒答/澄清理由判定 | 无答案及冲突/适用范围题，分别报告；全部拒答会导致可回答题正确率下降 |
+| 延迟与用量 | Trace 记录改写、检索、重排、判定、首内容和完成耗时 | API 错误、超时、截断率并列；在线和评测用量分别计量 |
+
+Ragas 的 Faithfulness 衡量答案是否受上下文支持；AnswerCorrectness 是相对参考答案的事实与语义加权分数。后者可作辅助分析，但不能把平均 0.85 直接称为 85% 的业务答案正确率。[Faithfulness](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/faithfulness/)，[AnswerCorrectness](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/answer_correctness/)
+
+实现使用轻量 Python runner：检索与状态指标自研，Faithfulness 接 Ragas 适配层，业务正确率使用可读的逐事实评分表。初始辅助评委使用现有 deepseek-v4-pro，独立评分 Prompt、非思考模式、固定低温度，不提供实验名称；它不能因答案来自同一模型而自行成为真值。
+
+首轮正式验收人工复核 200 条测试样本在最终方案 D 下的回答，记录模型判定与人工判定的差异。后续复核全部变化/失败样本及不少于 40 条分层随机样本，保持人工覆盖率可见。报告分别展示自动评分与人工修订后的结果；失败评分记为待复核，未补齐评分前不宣称满足正确率验收。
+
+CLI 测得的服务端首内容耗时与浏览器发送到渲染首字的用户 TTFT 分开命名和报告；页面指标另通过浏览器走查测量。流式加载提示、思考内容和空片段不能充当首字。
+
+### 8.5 代码组织与运行模式
+
+计划在 Python RAG 服务中设置以下模块；此处是实现设计，命令与模块尚待编码：
+
+```text
+rag/evaluation/
+  dataset.py          样本校验、划分与证据锚点映射
+  runner.py           执行实验与逐样本落盘、失败续跑
+  retrieval_metrics.py 召回、完整覆盖与排名
+  answer_judge.py     逐事实评分与拒答/澄清评分
+  ragas_adapter.py    显式接入已配置的评委和 Embedding
+  report.py           汇总、基线差值和失败归因
+  cli.py              validate、run、compare、report 命令
+```
+
+评测入口区分 retrieval（不生成答案）、end-to-end（真实生成）、judge（复用保存答案评分）。Ragas 必须显式传入已配置的模型适配器，不能隐式使用其他提供商或未经配置的 Embedding。
+
+首期提供 CLI 与 JSON/Markdown 报告，不新增看板页面。样本保存为本地 JSONL；报告输出 summary.json、cases.jsonl、comparison.md 和 failures.md。每题保存候选排名、最终证据、回答、引用、终态、评分依据与耗时，支持从某个 case ID 定位失败。
+
+运行清单固定数据校验值、模型标识、生成/评分参数、Prompt/切片/评测规则版本和 Git commit。断点续跑只能补齐同一清单的缺失结果，不能混入新版本结果；计费调用前输出预期请求数，并限制并发、Token 预算和最长运行时间。
+
+### 8.6 回归与失败分析
+
+- 日常提交运行无外部费用的样本格式、程序指标和业务集成验证；20 条开发冒烟与 200 条真实 API 验收由手动触发。
+- 先测检索，再测生成和评分，避免每次调整召回参数都生成并评判 800 个答案。更改 Prompt 时复用固定检索结果；更改模型/切片时重新生成对应阶段。
+- 分析按解析丢失、切片边界、检索漏召回、重排降序、改写错误、错误拒答、生成漏事实、无依据陈述、引用错误和接口失败归类，并链接到原文及运行记录。
+- 与上一固定基线比较同一批样本，输出每题得失与整体变化；出现模型波动时重复运行并报告范围，不只保存最好的一次。
+- 新增数据或修改真值后重算基线，不能与旧数据集成绩直接比较。调优结论与最终验收样本保持版本记录。
+- 自动门禁在基线稳定后启用：引用 ID 必须全部合法，业务正确率 ≥85%，Recall@5 ≥82%。回退容忍候选为正确率 0.5 个百分点、召回 2 个百分点，须经重复实验与人工确认后确定。
+
 ## 9. 需要人工确认的方案决定
 
 1. 使用 Go + Python、Vue 和 PostgreSQL/pgvector 的技术栈。
 2. 首期先支持 PDF/DOCX/Markdown/TXT，并用停用代替永久删除。
 3. 普通/管理员本地账号，不接企业 SSO；Compose 单实例演示部署。
-4. API 重排序或大模型重排序的默认实现，待用户补充资源后锁定。
+4. 第 8 章的黄金集、分层评测、人工复核和回归方案。
 
-模型名称及接口协议已核对；1024 维、非思考模式是待确认的推荐默认值。阿里实际 API Host、重排序资源和整体方案确认仍待用户补充。
+阿里北京 API Host 与 qwen3.7-text-rerank 已由用户确认。1024 维、非思考模式和整体技术方案及评测流程待确认。
 
 ## 10. 核对的官方资料
 
 - [pgvector](https://github.com/pgvector/pgvector)：PostgreSQL 向量存储、精确/近似检索、索引维度限制及过滤行为。
 - [rank_bm25](https://github.com/dorianbrown/rank_bm25)：BM25 实现，分词与预处理需由调用方完成。
 - [FastAPI](https://fastapi.tiangolo.com/)：Python API 框架。
-- [BGE Reranker 模型说明](https://huggingface.co/BAAI/bge-reranker-v2-m3)：本地重排备选及模型接口。
+- [阿里文本重排接口](https://help.aliyun.com/zh/model-studio/text-rerank-api)：qwen3.7-text-rerank 请求、索引和分数语义。
 - [DeepSeek 官方文档](https://api-docs.deepseek.com/)：deepseek-v4-pro 与服务入口。
 - [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)：流式、JSON Output、终态与用量。
 - [阿里文本向量同步接口](https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api/)：模型、维度、批量与原生 API 参数。
+- [Ragas Faithfulness](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/faithfulness/)：上下文支持性评分。
+- [Ragas AnswerCorrectness](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/answer_correctness/)：参考答案的事实及语义评分。
