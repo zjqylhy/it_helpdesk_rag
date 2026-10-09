@@ -17,7 +17,8 @@ def summary(results):
                    automatic_answer_correctness=mean([int(r['judge'].get('correct') is True) for r in scored]) if len(scored)==len(answerable) else None,
                    official_answer_correctness=mean([int(r['human'].get('correct') is True and r['status']=='completed') for r in human]) if len(human)==len(answerable) else None,
                    human_reviewed=len(human),
-                   needs_human_review=sum(r.get('judge',{}).get('needs_review',False) for r in results),
+                   # 自动评分保留复核提示，已完成人工裁决的题目不再计入待复核。
+                   needs_human_review=sum(r.get('judge',{}).get('needs_review',False) and not r.get('human') for r in results),
                    faithfulness=mean([r.get('faithfulness') for r in results]))
     metrics['model_calls']=sum(r.get('model_calls',0)+r.get('judge_calls',0) for r in results)
     metrics['usage_records']=[u for r in results for u in (r.get('usage') or [])+(r.get('judge_usage') or [])] or None

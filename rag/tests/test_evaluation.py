@@ -58,6 +58,18 @@ def test_failure_denominator_and_pending_review():
     del rows[1]['judge']
     assert summary(rows)['automatic_answer_correctness'] is None
 
+def test_human_decisions_clear_pending_review_without_rewriting_model_scores():
+    rows=[{'id':'a','status':'completed','expected_behavior':'answer','judge':{'correct':False,'needs_review':True},
+           'human':{'correct':True,'reviewer':'human','reason':'复核发现评分错误'}},
+          {'id':'b','status':'completed','expected_behavior':'answer','judge':{'correct':False,'needs_review':True}}]
+    result=summary(rows)
+    assert result['human_reviewed']==1 and result['needs_human_review']==1
+    assert result['automatic_answer_correctness']==0 and result['official_answer_correctness'] is None
+    rows[1]['human']={'correct':False,'reviewer':'human','reason':'缺少必要事实'}
+    result=summary(rows)
+    assert result['needs_human_review']==0 and result['official_answer_correctness']==0.5
+    assert result['automatic_answer_correctness']==0
+
 def test_comparison_refuses_different_corpus(tmp_path):
     a,b=tmp_path/'a',tmp_path/'b';a.mkdir();b.mkdir()
     for root,hashvalue in [(a,'old'),(b,'new')]:
