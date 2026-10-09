@@ -1,0 +1,20 @@
+# 模型凭据与本地配置
+.env
+.env.*
+!.env.example
+
+# 原始素材、运行数据及包含私有内容的报告仅留在本地
+data/
+uploads/
+reports/
+eval/private/
+
+# 本地运行与构建输出
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+*.log
+.idea/
+.vscode/
