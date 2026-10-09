@@ -13,6 +13,7 @@ eval/private/
 node_modules/
 dist/
 .venv/
+.venv*/
 __pycache__/
 *.pyc
 *.log

@@ -1,0 +1,11 @@
+.git
+.env*
+data
+reports
+eval/private
+**/node_modules
+**/dist
+**/.venv*
+**/__pycache__
+tools
+rag/tests
