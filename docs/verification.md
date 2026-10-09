@@ -11,7 +11,19 @@
 | 评测 CLI | 通过 | 真实 SQL 快照导出、来源核对、冻结发布、A/B/C/D 检索、生成/辅助评分、报告、一致清单续跑 |
 | 无头 Edge 页面测试 | 通过 | 登录、知识库加载、流式答案、引用展开、知识管理、版本切片、登录恢复；无页面脚本异常 |
 
-SQL 验证使用 PGlite 0.5.8 + pgvector + PostgreSQL TCP 协议服务，不是原生 PostgreSQL。Go 使用 `DB_SIMPLE_PROTOCOL=true` 避免测试服务共享底层连接导致的语句缓存冲突。原生数据库保留默认 pgx 协议设置；发布事务、租约恢复和进程重启仍应在原生 PostgreSQL 中补验。当前环境没有 Docker，Compose 镜像构建与启动未验证。
+首轮 SQL 验证使用 PGlite 0.5.8 + pgvector + PostgreSQL TCP 协议服务，Go 使用 `DB_SIMPLE_PROTOCOL=true` 避免测试服务共享底层连接导致的语句缓存冲突。后续 Windows 原生验证见下文。当前环境没有 Docker，Compose 镜像构建与启动未验证。
+
+## Windows 原生 PostgreSQL 补验
+
+PostgreSQL 16.15 + pgvector 0.8.6 安装在项目 `data/native-postgres/`，仅监听 127.0.0.1:55433，不改动已有 5432 服务。独立测试库 `rag_contract_1791556708` 使用非超级用户 rag 和默认 pgx 协议（`DB_SIMPLE_PROTOCOL=false`）。
+
+- `tests.integration_check` 通过：跨服务流程、原子版本发布、请求并发互斥和中断持久化。
+- `tests.evaluation_check` 通过：来源核对、冻结发布、四组检索、生成评分、报告及续跑。
+- 数据库正常 stop/start 后测试消息数量保留；重复 init 前后的 `.env` 配置一致，业务账号无超级用户权限，业务库 rag 无测试表或内容。
+- Windows PowerShell 5 脚本语法与 Init 创建/拒绝覆盖验证通过；Check 能识别缺失配置并连接原生 pgvector；Python 启动工具语法检查通过。
+- 官方独立 Compose v5.6.0 下载后通过 SHA256 校验，`config --quiet` 校验当前 Compose 配置通过，无需 Docker 引擎；CI 新增 Linux 镜像构建与启动健康检查任务，但本次未执行该任务。
+
+以上模型调用均使用本地替身。原生环境的 Worker 崩溃后租约接管、应用进程崩溃恢复和真实 API 仍未专项验证。
 
 模型替身服务来自 `rag/tests/fake_models.py`，测试文档明确为虚构的工程素材。替身回答与耗时不代表 DeepSeek/Qwen 的真实效果，不能使用这轮报告宣称达到业务指标。真实 Key、导出原文、开发集和 200 条经审核的测试题尚待提供/构建。
 

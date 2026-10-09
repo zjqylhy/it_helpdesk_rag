@@ -53,3 +53,29 @@ jobs:
           cd rag
           uv run python -m tests.integration_check
           uv run python -m tests.evaluation_check
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare isolated container test configuration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import secrets
+          content = Path('.env.example').read_text()
+          for placeholder in ('replace-with-a-long-random-string', 'replace-with-a-strong-password', 'replace-with-another-password'):
+              content = content.replace(placeholder, secrets.token_hex(24))
+          content = content.replace('POSTGRES_PASSWORD=rag', 'POSTGRES_PASSWORD=' + secrets.token_hex(24))
+          Path('.env').write_text(content)
+          PY
+      - name: Validate and start cloud container entrypoint
+        run: |
+          docker compose config --quiet
+          docker compose up --build -d --wait --wait-timeout 180
+          curl --fail --silent http://127.0.0.1:3000/ > /dev/null
+          docker compose exec -T backend wget -q -O /dev/null http://127.0.0.1:8080/health
+          docker compose exec -T rag python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"
+      - name: Stop isolated container test
+        if: always()
+        run: docker compose down --volumes

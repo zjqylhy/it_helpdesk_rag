@@ -15,9 +15,13 @@
 | 关键词检索 | rank_bm25 + 中文分词 | 在已发布知识快照内进行 BM25 检索 |
 | 文件存储 | 本地持久化卷 | 保存原文件和不可变版本，后续可替换对象存储 |
 | 模型 | qwen3.7-text-embedding + qwen3.7-text-rerank + deepseek-v4-pro | Embedding、重排序及生成的独立 API 适配器 |
-| 部署 | Docker Compose | Windows 开发及可重复演示 |
+| 部署 | Windows 原生进程；Docker Compose 可选 | 本机开发及可重复演示 |
 
 与原 PRD 的差异：采用其轻量 PostgreSQL/pgvector 路线，统一业务与向量存储；首期不引入 Milvus、MySQL、Redis、Kubernetes 或完整 LangChain/LlamaIndex。RAG 各环节用显式接口编排，保留替换能力。
+
+2026-10-09 环境补充：用户确认使用 Windows 本机 PostgreSQL + pgvector，未安装 Docker Desktop。原生部署使用项目目录内 PostgreSQL 16.15 + pgvector 0.8.6，默认本机 55433 端口；不注册系统服务，不改动已有 5432 服务，Compose 保留为可选方案。运行步骤见 [Windows 说明](windows.md)。
+
+同日用户补充需支持云上部署。首期云部署采用 Linux 单机 Docker Compose，业务代码与 Windows 共用；数据库及原文件使用持久化卷，Go 与 RAG 共用 `/data/uploads`，外部通过宿主机 HTTPS 代理访问。Compose 补齐健康检查和进程退出后的自动重启，默认保持单个 Go 与 RAG 实例。跨机器、多副本需要对象存储与索引/会话并发协调，另行扩展。见 [云部署说明](cloud.md)。
 
 BM25 为首期单 RAG 实例的内存索引，以 PostgreSQL 中不可变的已发布切片快照重建，适合当前演示范围。容量增加或需要多实例时再迁移关键词索引服务；此方案不宣称支持原 PRD 的生产级规模。
 

@@ -2,6 +2,10 @@
 
 用于求职展示的知识问答项目。首期提供 Web 问答、知识管理和离线评测，需求与技术方案已由用户确认。
 
+Windows 不需要 Docker Desktop，按 [Windows 原生运行说明](docs/windows.md) 配置数据库并启动。Docker Compose 是可选部署方案。
+
+云上支持 Linux 单机 Docker Compose，共用应用代码，见 [云部署说明](docs/cloud.md)。
+
 业务 API 使用 Go/Gin，RAG 与 Worker 使用 Python/FastAPI，前端使用 Vue 3，数据保存到 PostgreSQL/pgvector。中文 BM25 与向量检索经 RRF 融合后调用 Qwen 重排，DeepSeek 根据证据生成带来源的回答。
 
 ## 已实现
@@ -15,7 +19,7 @@
 
 当前仅完成工程验证，尚未接入用户真实 Key 和导出素材。测试替身与虚构测试文档只用于接口验证，不能证明正确率、召回率或真实 API 延迟达标。200 条真实黄金集待素材导入与人工审核后构建。
 
-## Docker Compose 启动
+## Docker Compose 启动（可选）
 
 安装 Docker Desktop，并启用 Linux 容器。在项目根目录执行：
 
@@ -33,11 +37,11 @@ docker compose up --build -d
 
 原文件和数据库保存在 Docker 命名卷中。Python 服务和 Go API 未发布到主机端口，浏览器经 Web 的 `/api/` 代理访问。数据库端口只绑定本机，供本地评测 CLI 使用。
 
-当前环境没有 Docker，Compose 尚未实际启动验证。已验证 Windows 本地服务和临时 PostgreSQL 协议数据库；原生 PostgreSQL 并发/进程重启场景仍需在部署环境补验。
+当前环境没有 Docker，Compose 尚未实际启动验证。Windows 原生 PostgreSQL 16.15 + pgvector 0.8.6 已验证跨服务流程、请求并发互斥和数据库重启持久化，详见 [验证记录](docs/verification.md)。
 
-## Windows 本地开发
+## Windows 本地开发（默认）
 
-需要 Go 1.27、Python 3.12+、uv、Node.js 24，以及带 pgvector 的 PostgreSQL。首先复制并编辑 `.env`，在 `DATABASE_URL` 中填写数据库连接。下面命令分别在独立终端执行：
+需要 Go 1.27、Python 3.12+、uv、Node.js 24，以及带 pgvector 的 PostgreSQL。推荐先按 [Windows 原生运行说明](docs/windows.md) 初始化数据库和配置，下面命令分别在独立终端执行：
 
 ```powershell
 # 业务服务：自动创建首期数据库表及本地配置账号。
