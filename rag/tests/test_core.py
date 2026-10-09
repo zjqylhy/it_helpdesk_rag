@@ -55,6 +55,8 @@ def test_rrf_and_citations():
     assert rrf([['a','b'],['b','c']])[0]=='b'
     with pytest.raises(ProviderError):valid_citations('事实 [C0]',[{'id':'x'}])
     with pytest.raises(ProviderError):valid_citations('无引用',[{'id':'x'}])
+    with pytest.raises(ProviderError):valid_citations('非标准编号 [C01]',[{'id':'x'}])
+    with pytest.raises(ProviderError):valid_citations('混入非法编号 [Cfoo] [C1]',[{'id':'x'}])
     assert valid_citations('事实 [C1] [C1]',[{'id':'x'}])==[{'id':'x','label':'C1'}]
 
 def data():

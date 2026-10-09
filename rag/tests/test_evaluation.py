@@ -6,7 +6,7 @@ from helpdesk.config import Settings
 from helpdesk.providers import Models
 from helpdesk.evaluation.dataset import Case, save, load
 from helpdesk.evaluation.dataset_maintenance import affected
-from helpdesk.evaluation.report import summary, compare
+from helpdesk.evaluation.report import summary, compare, report
 
 def test_theme_leakage_rejected(tmp_path):
     base=dict(id='a',theme='one-fact',knowledge_base='k',corpus_version='s',question='q',expected_behavior='refuse')
@@ -34,6 +34,12 @@ def test_comparison_refuses_different_corpus(tmp_path):
     for root,hashvalue in [(a,'old'),(b,'new')]:
         (root/'manifest.json').write_text(json.dumps({'dataset_hash':'d','corpus_hash':hashvalue,'mode':'retrieval'}))
     with pytest.raises(ValueError):compare(a,b,tmp_path/'comparison.md')
+
+def test_incomplete_run_remains_pending(tmp_path):
+    (tmp_path/'manifest.json').write_text(json.dumps({'cases':[{'id':'a','expected_behavior':'answer'},{'id':'b','expected_behavior':'answer'}]}))
+    data=report(tmp_path,[{'id':'a','question':'q','status':'completed','expected_behavior':'answer','judge':{'correct':True}}])
+    assert data['total']==2 and data['pending']==1
+    assert data['automatic_answer_correctness'] is None
 
 @pytest.mark.asyncio
 async def test_ragas_uses_configured_model_and_budget():

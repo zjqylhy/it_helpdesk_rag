@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
-from .dataset import load, save, validate, publish, Case
+from .dataset import load, save, validate, publish, Case, sha
 from .dataset_maintenance import changes, affected, suggest, review
 from .report import compare, report
 from .runner import run
@@ -53,7 +53,7 @@ async def execute(args):
         elif c=='edit':
             cases=load(args.dataset);candidate=Case.model_validate(read(args.case));old=next((x for x in cases if x.id==candidate.id),None)
             if old and candidate.case_revision != old.case_revision+1: raise ValueError('修改样本必须增加一次 revision')
-            candidate.status='review';candidate.review_record={}
+            candidate.status='retired' if candidate.status=='retired' else 'review';candidate.review_record={}
             save(args.out,[candidate if x.id==candidate.id else x for x in cases]+([] if old else [candidate]),exclusive=True)
         elif c=='review':
             cases=load(args.dataset)
@@ -88,9 +88,14 @@ async def execute(args):
                     print(variant,json.dumps(await run(settings,store,models,args.dataset,args.corpus,Path(args.out)/variant,variant,args.mode,args.resume,args.split,queries,args.judge,args.ragas),ensure_ascii=False))
             else: print(json.dumps(await run(settings,store,models,args.dataset,args.corpus,args.out,args.variant,args.mode,args.resume,args.split,judge_answers=args.judge,ragas=args.ragas),ensure_ascii=False))
         elif c=='judge':
-            root=Path(args.out);root.mkdir(parents=True,exist_ok=False)
+            root=Path(args.out)
             cases={x.id:x for x in load(args.dataset)};rows=[json.loads(x) for x in (Path(args.run)/'cases.jsonl').read_text(encoding='utf-8').splitlines() if x.strip()]
-            latest={r['id']:r for r in rows};manifest=read(Path(args.run)/'manifest.json');manifest['judge']=True;write(root/'manifest.json',manifest)
+            latest={r['id']:r for r in rows};manifest=read(Path(args.run)/'manifest.json');manifest['judge']=True
+            expected=[x for x in cases.values() if x.split==manifest['split'] and x.status!='retired']
+            if sha([x.model_dump() for x in expected])!=manifest['dataset_hash']:raise ValueError('评分数据集与原运行清单不一致')
+            if root.exists():raise ValueError('评分输出目录已经存在')
+            root.mkdir(parents=True,exist_ok=False)
+            write(root/'manifest.json',manifest)
             for row in latest.values():
                 call_start,usage_start=models.calls,len(models.ledger)
                 try: row['judge']=await judge(models,cases[row['id']],row)

@@ -1,0 +1,59 @@
+# 评测集格式与维护
+
+文件为 UTF-8 JSONL，每行一题。以下是格式示例，版本 ID 与 quote 需要替换成实际导出快照中的值；它不是可用黄金样本。
+
+```json
+{"id":"vpn-001","case_revision":1,"status":"review","split":"dev","theme":"vpn-server-configuration","tags":["single-document"],"knowledge_base":"KB_ID","corpus_version":"SNAPSHOT_ID","question":"该组织的 VPN 如何配置？","history":[],"expected_behavior":"answer","reference_answer":"依据原文填写","required_facts":["依据原文填写必要事实"],"forbidden_facts":[],"evidence_groups":[[{"source_version":"VERSION_ID","locator":{"paragraph":3,"section":"客户端配置"},"quote":"原文节选"}]],"change_reason":"首次标注","review_record":{}}
+```
+
+`status` 支持 draft、review、active、retired。有效样本必须有审核人和审核时间；停用题目在发布时也要审核。`split` 为 dev/test，同一 `theme` 不能跨划分。文档版本、知识快照和数据集发布版本分别管理。
+
+证据锚点引用原文版本、页码/段落/章节及原样节选。同组来源可互相替代，不同组代表必须组合的证据。重复出现的节选需要在 locator 中提供 `start` 字符位置。切片的 start/end 是段落内字符区间；召回按区间合并判断，重叠切片不会重复计分。
+
+## 人工修改
+
+1. 用 `draft RELEASE/cases.jsonl --out NEW_DRAFT.jsonl` 创建草稿。
+2. 将需要修改的完整样本另存为 JSON，保留 id，将 case_revision 增加 1，填写 change_reason；用 `edit DRAFT --case CASE.json --out NEXT_DRAFT` 应用修改或新增。
+3. 用 `validate DRAFT --corpus CORPUS.json` 核对原文证据。
+4. 逐题人工审查问题、必要事实、预期行为和来源，用 `review` 写入审核记录。
+5. 用 `publish` 创建新的发布目录；旧目录不可覆盖。
+
+原文版本更新时，未受事实变动影响的题目仍需绑定新 corpus_version 并核对出处。评测可以复现旧快照，旧成绩只描述旧语料；正式验收必须使用当前语料匹配的发布集。不能将新旧数据集成绩差异直接视为算法提升。
+
+## AI 辅助维护
+
+先导出更新后的语料，再执行：
+
+```powershell
+uv run rag-eval diff OLD_DATASET.jsonl --old OLD_CORPUS.json --new NEW_CORPUS.json --out IMPACT.json
+uv run rag-eval suggest OLD_DATASET.jsonl --old OLD_CORPUS.json --new NEW_CORPUS.json --ids CASE_1,CASE_2 --out PROPOSALS.json --max-calls 20
+```
+
+`diff` 输出文本差异与待检查题目，保守包含来源变更题、拒答/澄清题、跨文档题及可能受到新增冲突影响的题目。`suggest` 使用旧/新原文提出 keep、reanchor、revise、retire 建议，并验证新证据节选；输入过长会由模型接口明确失败，首期请按小规模知识库或分批语料处理。
+
+建议文件保留 before/after。人工检查后将 after 保存成单题 JSON，再使用 `edit`、`validate`、`review`、`publish`。AI 不直接更新已发布数据集，也不使用被测 RAG 回答充当标准答案。新增题可用 `generate` 创建少量候选后人工审核，拒答、冲突和多轮场景需要人工补充。
+
+文档变更后，即使只修改少数题，也应在新的完整冻结集上重跑旧/新检索策略，建立新基线。维护成本由模型调用用量和受影响题目的人工审核工作量组成；当前没有真实素材实测，不能给出维护工时或金额承诺。
+
+## 人工裁决
+
+将逐题裁决保存为 JSONL：
+
+```json
+{"id":"vpn-001","correct":true,"reviewer":"审核人","reason":"必要事实齐全，适用组织和出处正确"}
+```
+
+```powershell
+uv run rag-eval adjudicate --run RUN_DIRECTORY --decisions DECISIONS.jsonl --out REVIEWED_RUN_DIRECTORY
+```
+
+人工结果与自动评分同时保留。正式答案正确率要求所有可回答题都有人工判定，且失败、拒答或截断不能被标为成功回答。首轮最终方案 D 的 200 题需全量审核；后续变化/失败题与至少 40 条分层抽样审核的要求见技术方案。
+
+## 指标解释
+
+- Recall@5 是每题必要证据组覆盖率再取平均；完整覆盖和 MRR 单独报告。
+- 自动答案正确率是每题所有必要事实通过且无错误结论的二元比例；评分不齐时报告 null。
+- Faithfulness 衡量答案是否受到本次上下文支持，不能替代业务正确率。
+- refused 与 clarify 分别评价；全部拒答不会提高可回答题正确率。
+- CLI 服务端 TTFT 与页面发送到渲染首字的 TTFT 分别记录，测试替身耗时不代表真实模型耗时。
+- 引用编号合法性只证明引用属于本次证据，语义支持需要逐事实评委和人工核对。

@@ -86,8 +86,8 @@ func main() {
 		log.Fatal(e)
 	}
 	for _, account := range []struct{ name, password, role string }{{os.Getenv("ADMIN_USER"), os.Getenv("ADMIN_PASSWORD"), "admin"}, {os.Getenv("USER_NAME"), os.Getenv("USER_PASSWORD"), "user"}} {
-		if account.name == "" || len(account.password) < 12 {
-			log.Fatal("演示账号名称不能为空，密码至少 12 字符")
+		if account.name == "" || len(account.password) < 12 || len(account.password) > 72 {
+			log.Fatal("演示账号名称不能为空，密码为 12–72 字节")
 		}
 		hash, _ := bcrypt.GenerateFromPassword([]byte(account.password), bcrypt.DefaultCost)
 		// 本地配置是演示账号的唯一来源，修改配置后重启即可更新密码。

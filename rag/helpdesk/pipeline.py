@@ -18,9 +18,11 @@ def rrf(rankings, k=60):
     return sorted(scores, key=lambda uid: (-scores[uid], uid))
 
 def valid_citations(answer, evidence):
-    labels = re.findall(r'\[C(\d+)\]', answer)
-    if not labels or any(not 1 <= int(n) <= len(evidence) for n in labels):
+    raw_labels = re.findall(r'\[C[^\]]*\]', answer)
+    allowed = {f'[C{i}]' for i in range(1,len(evidence)+1)}
+    if not raw_labels or any(label not in allowed for label in raw_labels):
         raise ProviderError('引用校验失败，已输出回答未验证')
+    labels = [label[2:-1] for label in raw_labels]
     return [{**evidence[int(n)-1], 'label': f'C{n}'} for n in dict.fromkeys(labels)]
 
 class Pipeline:

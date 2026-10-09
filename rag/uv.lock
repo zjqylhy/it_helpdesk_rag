@@ -662,7 +662,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1,<2" },
     { name = "ragas", marker = "extra == 'faithfulness'", specifier = ">=0.3,<0.4" },
     { name = "rank-bm25", specifier = ">=0.2.2" },
-    { name = "uvicorn", specifier = ">=0.34,<1" },
+    { name = "uvicorn", specifier = ">=0.36,<1" },
 ]
 provides-extras = ["test", "faithfulness"]
 

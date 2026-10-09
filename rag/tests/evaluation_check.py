@@ -37,6 +37,14 @@ def main():
     # 同一清单续跑不产生重复结果。
     cli('run',root/'cases.jsonl','--corpus',root/'corpus.json','--out',root/'answers','--mode','end-to-end','--judge','--resume','--max-calls','20')
     assert len((root/'answers/cases.jsonl').read_text().splitlines())==1
+    cli('judge',root/'cases.jsonl','--run',root/'answers','--out',root/'judge-only','--max-calls','20')
+    (root/'decisions.jsonl').write_text(json.dumps({'id':'contract-one','correct':True,'reviewer':'工程契约测试','reason':'仅验证人工裁决导入'},ensure_ascii=False)+'\n',encoding='utf-8')
+    cli('adjudicate','--run',root/'answers','--decisions',root/'decisions.jsonl','--out',root/'human-reviewed')
+    reviewed=json.loads((root/'human-reviewed/summary.json').read_text())
+    assert reviewed['official_answer_correctness']==1
+    changed=json.loads((root/'cases.jsonl').read_text());changed['question']='修改后问题';save(root/'changed.jsonl',[changed],exclusive=True)
+    mismatch=subprocess.run([sys.executable,'-m','helpdesk.evaluation.cli','judge',str(root/'changed.jsonl'),'--run',str(root/'answers'),'--out',str(root/'invalid-judge')],capture_output=True)
+    assert mismatch.returncode!=0 and not (root/'invalid-judge').exists()
     print('评测 CLI 验证通过：来源校验、冻结发布、四组检索、完整生成与评分、报告、清单一致续跑。')
 
 if __name__=='__main__':main()
