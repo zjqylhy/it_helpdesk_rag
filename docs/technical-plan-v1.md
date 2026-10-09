@@ -14,7 +14,7 @@
 | 数据存储 | PostgreSQL + pgvector | 业务元数据、知识切片、向量和任务 |
 | 关键词检索 | rank_bm25 + 中文分词 | 在已发布知识快照内进行 BM25 检索 |
 | 文件存储 | 本地持久化卷 | 保存原文件和不可变版本，后续可替换对象存储 |
-| 模型 | 用户已有 Embedding API + 大模型 API | 按接口协议封装适配器，不预设 BGE-M3 或大模型名称 |
+| 模型 | qwen3.7-text-embedding + deepseek-v4-pro | 阿里 DashScope Embedding 适配器与 DeepSeek Chat Completions 适配器 |
 | 部署 | Docker Compose | Windows 开发及可重复演示 |
 
 与原 PRD 的差异：采用其轻量 PostgreSQL/pgvector 路线，统一业务与向量存储；首期不引入 Milvus、MySQL、Redis、Kubernetes 或完整 LangChain/LlamaIndex。RAG 各环节用显式接口编排，保留替换能力。
@@ -98,12 +98,33 @@ Web 使用支持 POST 和鉴权的 fetch 流读取，不依赖仅 GET 的原生 
 
 ## 7. 模型配置与限制
 
-- 分别配置 Embedding/LLM 的协议、服务地址、模型、凭据、超时与并发；是否兼容同一种协议需按用户提供的文档核对。
+- 分别配置 Embedding/LLM 的协议、服务地址、模型、凭据、超时与并发；两家接口使用独立适配器与配置。
 - 凭据放在本地 .env，仓库只提交 .env.example；浏览器不持有模型 Key。
 - 分别限制批量 Embedding、在线生成、离线评测的并发，避免评测占满问答调用额度。
 - 记录实际 Token 用量；只有配置单价时才计算估算成本，缺失数据不能记为零。
 - 首期不做答案缓存，以免知识版本替换后复用旧回答；可缓存按内容校验值和模型版本绑定的 Embedding。
 - 模型超时是运行配置并通过实测调整；原 PRD 的 20 秒仅为初始交互候选，不能在未知 API 条件下承诺。
+
+### 7.1 DeepSeek 接入
+
+用户指定 deepseek-v4-pro，官方已列出该模型。采用 POST https://api.deepseek.com/chat/completions，Bearer 鉴权，stream=true 获取答案。[官方入口](https://api-docs.deepseek.com/)
+
+建议问答默认显式设置 thinking.type=disabled，以减少答案正文前的等待；效果和延迟需实测。启用思考时，reasoning_content 与 content 分开处理，TTFT 只统计答案正文。[思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)
+
+流解析处理增量内容、finish_reason、最后内容块附带的 usage 以及 [DONE]；长度截断不计完整成功。结构化辅助任务可用 JSON Output，但仍校验候选编号、字段与截断结果。[接口协议](https://api-docs.deepseek.com/api/create-chat-completion/)
+
+### 7.2 阿里 Embedding 接入
+
+用户指定 qwen3.7-text-embedding。建议采用 DashScope 原生同步 HTTP 接口，显式设置 dimension=1024、output_type=dense；入库使用 text_type=document，查询使用 text_type=query。官方默认维度为 1024，单批最多 20 条；首期按短切片保守分批，不追求输入上限。[同步接口](https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api/)
+
+服务地址从本地配置读取，须使用账号对应的地域和业务空间 API Host。适配器根据 text_index 对齐返回向量，并记录实际 usage；入库与查询保持相同模型、维度和预处理版本。
+
+### 7.3 接入验证计划
+
+- 配置齐备并进入编码阶段后，先用非敏感短文本验证两家 API 的实际可用性，不批量发送素材。
+- 检查 Embedding 返回向量数量、索引、维度、数值有效性和批量错误；错误不能自动切换模型或维度。
+- 检查 DeepSeek 的流式终态、Token 统计、超时与截断；区分空片段、答案正文及可能存在的思考字段。
+- 文档核对不代表账号权限、额度或实际调用已经验证；当前未调用付费模型接口。
 
 ## 8. 验证与交付
 
@@ -122,7 +143,7 @@ Web 使用支持 POST 和鉴权的 fetch 流读取，不依赖仅 GET 的原生 
 3. 普通/管理员本地账号，不接企业 SSO；Compose 单实例演示部署。
 4. API 重排序或大模型重排序的默认实现，待用户补充资源后锁定。
 
-模型提供商、名称、协议和维度未确定之前，只能确认适配层与数据边界；不填写虚构模型参数。
+模型名称及接口协议已核对；1024 维、非思考模式是待确认的推荐默认值。阿里实际 API Host、重排序资源和整体方案确认仍待用户补充。
 
 ## 10. 核对的官方资料
 
@@ -130,3 +151,6 @@ Web 使用支持 POST 和鉴权的 fetch 流读取，不依赖仅 GET 的原生 
 - [rank_bm25](https://github.com/dorianbrown/rank_bm25)：BM25 实现，分词与预处理需由调用方完成。
 - [FastAPI](https://fastapi.tiangolo.com/)：Python API 框架。
 - [BGE Reranker 模型说明](https://huggingface.co/BAAI/bge-reranker-v2-m3)：本地重排备选及模型接口。
+- [DeepSeek 官方文档](https://api-docs.deepseek.com/)：deepseek-v4-pro 与服务入口。
+- [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)：流式、JSON Output、终态与用量。
+- [阿里文本向量同步接口](https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api/)：模型、维度、批量与原生 API 参数。
