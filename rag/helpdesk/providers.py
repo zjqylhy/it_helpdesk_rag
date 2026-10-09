@@ -114,11 +114,15 @@ class Models:
             body['stream_options'] = {'include_usage': True}
         return body
 
-    async def json(self, system, payload):
+    async def json(self, system, payload, *, max_tokens=2048):
+        if type(max_tokens) is not int or not 1 <= max_tokens <= 16384:
+            raise ValueError('结构化输出预算需在 1–16384 token 之间')
+        body = self.llm_body([
+            {'role': 'system', 'content': system + '\n仅返回 JSON 对象。'},
+            {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}], structured=True)
+        body['max_tokens'] = max_tokens
         async with self.online:
-            data = await self.post('/chat/completions', self.llm_body([
-                {'role': 'system', 'content': system + '\n仅返回 JSON 对象。'},
-                {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}], structured=True), 'llm')
+            data = await self.post('/chat/completions', body, 'llm')
         try:
             choice = data['choices'][0]
             if choice['finish_reason'] != 'stop':

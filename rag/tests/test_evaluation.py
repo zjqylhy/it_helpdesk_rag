@@ -5,7 +5,7 @@ import pytest
 from helpdesk.config import Settings
 from helpdesk.providers import Models
 from helpdesk.evaluation.dataset import Case, save, load
-from helpdesk.evaluation.dataset_maintenance import affected
+from helpdesk.evaluation.dataset_maintenance import affected, generate
 from helpdesk.evaluation.report import summary, compare, report
 
 def test_theme_leakage_rejected(tmp_path):
@@ -18,6 +18,35 @@ def test_document_change_also_checks_negatives():
     c=Case(id='negative',split='test',theme='no-answer',knowledge_base='k',corpus_version='s',question='q',expected_behavior='refuse')
     rows=affected([c],{'paragraphs':[]},{'paragraphs':[{'version_id':'new'}]})
     assert rows[0]['id']=='negative'
+
+
+class CandidateModel:
+    def __init__(self, quote):
+        self.quote = quote
+
+    async def json(self, system, payload, **kwargs):
+        return {'cases': [{'id': 'candidate', 'theme': 'account', 'question': '账号是什么？',
+            'expected_behavior': 'answer', 'required_facts': ['账号为学号'], 'reference_answer': '使用学号',
+            'evidence_groups': [[{'source_version': 'v', 'locator': {'paragraph': 1}, 'quote': self.quote}]],
+            'status': 'active', 'review_record': {'reviewer': 'AI', 'approved_at': '2026-10-10'},
+            'knowledge_base': 'wrong', 'corpus_version': 'wrong'}]}
+
+
+@pytest.mark.asyncio
+async def test_generated_case_requires_human_review():
+    corpus = {'knowledge_base': 'k', 'corpus_version': 's',
+              'paragraphs': [{'version_id': 'v', 'locator': {'paragraph': 1}, 'text': '账号为学号。'}]}
+    candidate = (await generate(CandidateModel('账号为学号'), corpus, 1, 'dev'))[0]
+    assert candidate.status == 'review' and candidate.review_record == {}
+    assert candidate.knowledge_base == 'k' and candidate.corpus_version == 's'
+
+
+@pytest.mark.asyncio
+async def test_generated_case_rejects_invented_quote():
+    corpus = {'knowledge_base': 'k', 'corpus_version': 's',
+              'paragraphs': [{'version_id': 'v', 'locator': {'paragraph': 1}, 'text': '账号为学号。'}]}
+    with pytest.raises(ValueError):
+        await generate(CandidateModel('账号为手机号'), corpus, 1, 'dev')
 
 def test_failure_denominator_and_pending_review():
     rows=[{'id':'a','status':'completed','expected_behavior':'answer','judge':{'correct':True,'needs_review':True}},

@@ -8,6 +8,8 @@ data/
 uploads/
 reports/
 eval/private/
+# 飞书 CLI 读取文档时可能生成的嵌入资源
+doc-fetch-resources/
 
 # 本地运行与构建输出
 node_modules/

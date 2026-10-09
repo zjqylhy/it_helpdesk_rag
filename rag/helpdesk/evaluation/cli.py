@@ -3,7 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 from .dataset import load, save, validate, publish, Case, sha
-from .dataset_maintenance import changes, affected, suggest, review
+from .dataset_maintenance import changes, affected, suggest, review, generate
 from .report import compare, report
 from .runner import run
 from .answer_judge import judge
@@ -29,7 +29,7 @@ def parser():
     x=sub.add_parser('publish');x.add_argument('dataset');x.add_argument('--corpus',required=True);x.add_argument('--directory',required=True);x.add_argument('--version',required=True)
     x=sub.add_parser('diff');x.add_argument('dataset');x.add_argument('--old',required=True);x.add_argument('--new',required=True);x.add_argument('--out',required=True)
     x=sub.add_parser('suggest');x.add_argument('dataset');x.add_argument('--old',required=True);x.add_argument('--new',required=True);x.add_argument('--out',required=True);x.add_argument('--ids',required=True,help='逗号分隔待修订 ID');x.add_argument('--max-calls',type=int,default=20)
-    x=sub.add_parser('generate');x.add_argument('--corpus',required=True);x.add_argument('--count',type=int,default=5);x.add_argument('--split',choices=['dev','test'],default='dev');x.add_argument('--out',required=True)
+    x=sub.add_parser('generate');x.add_argument('--corpus',required=True);x.add_argument('--count',type=int,default=5);x.add_argument('--split',choices=['dev','test'],default='dev');x.add_argument('--out',required=True);x.add_argument('--max-calls',type=int,default=20)
     x=sub.add_parser('run');x.add_argument('dataset');x.add_argument('--corpus',required=True);x.add_argument('--out',required=True);x.add_argument('--variant',choices=list('ABCD')+['all'],default='D');x.add_argument('--mode',choices=['retrieval','end-to-end'],default='retrieval');x.add_argument('--split',choices=['dev','test'],default='dev');x.add_argument('--resume',action='store_true');x.add_argument('--judge',action='store_true');x.add_argument('--ragas',action='store_true');x.add_argument('--max-calls',type=int,default=200)
     x=sub.add_parser('judge');x.add_argument('dataset');x.add_argument('--run',required=True);x.add_argument('--out',required=True);x.add_argument('--max-calls',type=int,default=200)
     x.add_argument('--ragas',action='store_true')
@@ -65,15 +65,8 @@ async def execute(args):
             write(args.out,{'diff':changes(old,new),'affected':affected(load(args.dataset),old,new),'new_corpus_version':new['corpus_version']})
         elif c=='suggest': write(args.out,await suggest(models,load(args.dataset),read(args.old),read(args.new),set(args.ids.split(','))))
         elif c=='generate':
-            if not 1<=args.count<=20: raise ValueError('每次生成 1–20 条候选，分批审核')
             corpus=read(args.corpus)
-            generated=await models.json('从提供的真实原文生成黄金集候选，不虚构制度。输出 {"cases":[完整样本]}。每题含 id、split、theme、question、expected_behavior、required_facts、reference_answer、evidence_groups（数组的数组，组内 source_version/locator/quote）及 knowledge_base/corpus_version。每题单独事实主题。证据 quote 原样摘录。仅生成 answer 候选，后续人工补拒答、冲突、多轮场景。',{'corpus':corpus,'count':args.count,'split':args.split})
-            candidates=[]
-            for row in generated.get('cases',[]):
-                row.update(status='review',case_revision=1,review_record={},knowledge_base=corpus['knowledge_base'],corpus_version=corpus['corpus_version'],split=args.split)
-                candidates.append(Case.model_validate(row))
-            if len(candidates)!=args.count:raise ValueError('候选数量不符合要求')
-            validate(candidates,corpus);save(args.out,candidates,exclusive=True)
+            save(args.out,await generate(models,corpus,args.count,args.split),exclusive=True)
         elif c=='run':
             if args.variant=='all':
                 queries=None

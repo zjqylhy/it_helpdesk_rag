@@ -51,6 +51,21 @@ async def test_call_budget_includes_attempts():
     with pytest.raises(ProviderError):await m.json('test',{})
     await m.close()
 
+
+@pytest.mark.asyncio
+async def test_json_output_budget_does_not_change_online_default():
+    requests=[]
+    def handle(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':'{}'}}]})
+    m=Models(settings(),httpx.MockTransport(handle))
+    await m.json('generation',{},max_tokens=5120)
+    await m.json('online',{})
+    assert [r['max_tokens'] for r in requests]==[5120,2048]
+    with pytest.raises(ValueError):await m.json('generation',{},max_tokens=20000)
+    assert m.calls==2
+    await m.close()
+
 def test_rrf_and_citations():
     assert rrf([['a','b'],['b','c']])[0]=='b'
     with pytest.raises(ProviderError):valid_citations('事实 [C0]',[{'id':'x'}])

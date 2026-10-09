@@ -1,6 +1,7 @@
 .git
 .env*
 data
+doc-fetch-resources
 reports
 eval/private
 **/node_modules
