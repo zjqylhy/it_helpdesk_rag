@@ -6,9 +6,9 @@ import pytest
 from helpdesk.config import Settings
 from helpdesk.pipeline import Pipeline
 from helpdesk.providers import ProviderError
-from helpdesk.evaluation import runner
-from helpdesk.evaluation.answer_judge import judge
-from helpdesk.evaluation.dataset import Anchor, Case, save
+from helpdesk.evaluation import runner, cli
+from helpdesk.evaluation.answer_judge import judge, JUDGE_VERSION
+from helpdesk.evaluation.dataset import Anchor, Case, save, sha
 
 
 @pytest.mark.asyncio
@@ -95,3 +95,50 @@ async def test_unexpected_behavior_still_requires_human_review():
                 question='条件不明确时能否确定答案？', expected_behavior='clarify')
     result = await judge(SimpleNamespace(), case, {'status': 'completed'})
     assert result['correct'] is False and result['needs_review'] is True
+
+
+@pytest.mark.asyncio
+async def test_rejudge_records_new_judge_and_keeps_generation_and_original_result(tmp_path, monkeypatch):
+    case = Case(id='case', split='dev', theme='account', knowledge_base='kb', corpus_version='s',
+                question='账号验证有什么条件？', expected_behavior='answer', required_facts=['账号有效并在指定设备验证。'],
+                evidence_groups=[[Anchor(source_version='v', locator={'paragraph': 1}, quote='账号条件')]])
+    dataset = tmp_path / 'dataset.jsonl'
+    save(dataset, [case])
+    source, output = tmp_path / 'source', tmp_path / 'rejudged'
+    source.mkdir()
+    manifest = {'dataset_hash': sha([case.model_dump()]), 'split': 'dev', 'commit': 'generation-commit',
+                'prompt': 'qa-old', 'cases': [{'id': case.id, 'expected_behavior': 'answer'}]}
+    (source / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+    row = {'id': case.id, 'question': case.question, 'expected_behavior': 'answer', 'status': 'completed',
+           'answer': '使用有效账号完成验证 [C1]。', 'evidence': [{'id': 'c', 'text': '账号条件'}],
+           'citations': [{'id': 'c', 'label': 'C1'}], 'trace': {'total_ms': 1}, 'judge': {'correct': True}}
+    save(source / 'cases.jsonl', [row])
+
+    class SourceModels:
+        calls = 0
+        ledger = []
+
+        async def close(self):
+            pass
+
+    async def new_judge(models, case, saved):
+        models.calls += 1
+        models.ledger.append({'kind': 'llm', 'total_tokens': 1})
+        return {'correct': False, 'needs_review': True, 'reason': '未覆盖设备条件'}
+
+    monkeypatch.setattr(cli, 'Settings', lambda: Settings(_env_file=None, llm_model='configured-model'))
+    monkeypatch.setattr(cli, 'Store', lambda _: object())
+    monkeypatch.setattr(cli, 'Models', lambda _: SourceModels())
+    monkeypatch.setattr(cli, 'judge', new_judge)
+    monkeypatch.setattr(cli, 'git_commit', lambda: 'judge-new')
+    await cli.execute(SimpleNamespace(command='judge', dataset=str(dataset), run=str(source), out=str(output),
+                                      max_calls=1, ragas=False))
+    actual_manifest = json.loads((output / 'manifest.json').read_text(encoding='utf-8'))
+    actual_row = json.loads((output / 'cases.jsonl').read_text(encoding='utf-8'))
+    assert actual_manifest['commit'] == 'generation-commit' and actual_manifest['prompt'] == 'qa-old'
+    assert actual_manifest['judge_commit'] == 'judge-new' and actual_manifest['judge_prompt'] == JUDGE_VERSION
+    assert actual_manifest['judge_llm'] == 'configured-model' and actual_manifest['judge_source_manifest_hash'] == sha(manifest)
+    assert actual_row['judge']['correct'] is False
+    for key in ('answer', 'evidence', 'citations'):
+        assert actual_row[key] == row[key]
+    assert json.loads((source / 'cases.jsonl').read_text(encoding='utf-8'))['judge']['correct'] is True

@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from .dataset import load, validate, sha
 from .retrieval_metrics import retrieval_metrics
-from .answer_judge import judge
+from .answer_judge import judge, JUDGE_VERSION
 from .report import report
 from ..pipeline import Pipeline, PROMPT_VERSION
 
@@ -28,7 +28,8 @@ async def run(settings, store, models, dataset_path, corpus_path, output, varian
                 'commit':git_commit(),'prompt':PROMPT_VERSION,'llm':settings.llm_model,
                 'embedding':settings.embedding_model,'dimension':settings.embedding_dimension,
                 'rerank':settings.rerank_model,'context_budget':settings.context_budget,
-                'queries_hash':sha(queries) if queries is not None else None, 'judge':judge_answers,'ragas':ragas}
+                'queries_hash':sha(queries) if queries is not None else None, 'judge':judge_answers,'ragas':ragas,
+                'judge_prompt':JUDGE_VERSION if judge_answers else None}
     manifest['cases']=[{'id':c.id,'expected_behavior':c.expected_behavior} for c in cases]
     root = Path(output)
     results = []

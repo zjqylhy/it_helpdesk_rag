@@ -5,8 +5,8 @@ from pathlib import Path
 from .dataset import load, save, validate, publish, Case, sha
 from .dataset_maintenance import changes, affected, suggest, review, generate
 from .report import compare, report
-from .runner import run
-from .answer_judge import judge
+from .runner import run, git_commit
+from .answer_judge import judge, JUDGE_VERSION
 from ..config import Settings
 from ..store import Store
 from ..providers import Models
@@ -84,6 +84,9 @@ async def execute(args):
             root=Path(args.out)
             cases={x.id:x for x in load(args.dataset)};rows=[json.loads(x) for x in (Path(args.run)/'cases.jsonl').read_text(encoding='utf-8').splitlines() if x.strip()]
             latest={r['id']:r for r in rows};manifest=read(Path(args.run)/'manifest.json');manifest['judge']=True
+            # 复评不改写生成阶段版本，另记评委代码/提示与来源清单，保持可追溯。
+            manifest.update(judge_commit=git_commit(),judge_prompt=JUDGE_VERSION,judge_llm=settings.llm_model,
+                            judge_source_manifest_hash=sha(read(Path(args.run)/'manifest.json')))
             expected=[x for x in cases.values() if x.split==manifest['split'] and x.status!='retired']
             if sha([x.model_dump() for x in expected])!=manifest['dataset_hash']:raise ValueError('评分数据集与原运行清单不一致')
             if root.exists():raise ValueError('评分输出目录已经存在')
