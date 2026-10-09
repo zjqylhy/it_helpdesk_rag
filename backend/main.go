@@ -50,8 +50,13 @@ func fail(c *gin.Context, code int, message string) {
 	c.AbortWithStatusJSON(code, gin.H{"error": message})
 }
 
+func loadLocalEnvironment() {
+	// 本地从 backend 启动时读取项目根配置；容器使用已注入的环境变量。
+	_ = godotenv.Load("../.env")
+}
+
 func main() {
-	_ = godotenv.Load(".env", "../.env")
+	loadLocalEnvironment()
 	ctx := context.Background()
 	cfg, e := pgxpool.ParseConfig(os.Getenv("DATABASE_URL"))
 	if e != nil {

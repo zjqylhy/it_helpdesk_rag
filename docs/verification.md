@@ -45,6 +45,16 @@ PostgreSQL 16.15 + pgvector 0.8.6 安装在项目 `data/native-postgres/`，仅�
 
 新增配置别名与优先级测试后 pytest 为 17 项通过。Windows Check 配置及数据库检查通过，Python 工具与 PowerShell 语法、Compose 静态配置均校验通过。
 
+## 2026-10-10 本地应用启动验收
+
+Go 首次使用根目录 `.env` 启动时暴露配置读取缺陷：`godotenv.Load(".env", "../.env")` 在缺少 backend/.env 时提前返回，未加载根配置；之前注入 DATABASE_URL 的集成测试未覆盖。已改为只读 `../.env`，保持容器和进程注入变量优先。
+
+- Go 新增根配置读取回归测试，覆盖 backend/.env 不存在与进程变量不被覆盖；go test、go vet 和重新构建通过。
+- 本机 8080（Go）、8000（RAG）、5173（Web）实际启动成功，数据库健康检查通过；服务在后台隐藏运行，不注册系统服务。
+- 独立无头 Edge 使用真实本地配置账号登录，验证空知识库提示、知识管理、创建知识库表单和刷新后登录恢复，无页面脚本异常。截图为 `data/screenshots/local-ready.png`，未写入测试知识库。
+
+用户授权从 PRD 获取知识文档；飞书 CLI 读取暂因缺少文档读取/导出 scope 受阻。尚未下载语料或完成业务问答验收，不将页面启动验收计入 RAG 质量结果。
+
 ## 复现工程联测
 
 先安装前端、RAG 和 tools 的依赖。在分别的终端启动以下服务：
