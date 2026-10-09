@@ -81,8 +81,10 @@ async def run(settings, store, models, dataset_path, corpus_path, output, varian
                     result['faithfulness_error'] = type(exc).__name__
         except Exception as exc:
             result['error'] = str(exc) if isinstance(exc,ValueError) or type(exc).__name__=='ProviderError' else type(exc).__name__
+            result['trace']['total_ms'] = round((time.perf_counter()-started)*1000)
             if case.expected_behavior == 'answer':
-                result['retrieval'] = {'recall_at_5':0,'full_coverage':0,'mrr_at_5':0}
+                # 回答或引用失败不抹掉已经完成的召回，答案仍在错误分母中。
+                result['retrieval'] = retrieval_metrics(case,result['evidence'],corpus)
                 if judge_answers:
                     result['judge'] = {'correct':False,'needs_review':True,'reason':'执行失败'}
         latest[case.id] = result

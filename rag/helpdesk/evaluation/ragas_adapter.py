@@ -27,7 +27,9 @@ async def faithfulness(models, output):
 
     llm = ConfiguredJudge(run_config=RunConfig(max_retries=1, timeout=models.s.model_timeout))
     metric = Faithfulness(llm=llm)
-    sample = SingleTurnSample(user_input=output['question'], response=output['answer'],
-                              retrieved_contexts=[c['text'] for c in output['evidence']])
+    # 评委使用与生成阶段相同的原文上下文，短段落的流程和组织来自标题/章节。
+    contexts = ['\n'.join(filter(None, [c.get('title', ''), c.get('locator', {}).get('section', ''), c['text']]))
+                for c in output['evidence']]
+    sample = SingleTurnSample(user_input=output['question'], response=output['answer'], retrieved_contexts=contexts)
     score = float(await metric.single_turn_ascore(sample))
     return score if math.isfinite(score) else None

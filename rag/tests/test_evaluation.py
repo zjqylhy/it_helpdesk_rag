@@ -89,10 +89,12 @@ async def test_ragas_uses_configured_model_and_budget():
     def handle(request):
         body=json.loads(request.content)
         task=json.loads(body['messages'][-1]['content'])['task']
+        if 'break down' not in task.lower():
+            assert '测试来源文档' in task and '账号处理' in task and '测试事实' in task
         result={'statements':['测试事实']} if 'break down' in task.lower() else {'statements':[{'statement':'测试事实','reason':'有证据','verdict':1}]}
         return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':json.dumps(result)}}],'usage':{'total_tokens':10}})
     models=Models(Settings(_env_file=None,deepseek_api_key='contract'),httpx.MockTransport(handle));models.max_calls=4
-    score=await faithfulness(models,{'question':'q','answer':'测试事实','evidence':[{'text':'测试事实'}]})
+    score=await faithfulness(models,{'question':'q','answer':'测试事实','evidence':[{'title':'测试来源文档','locator':{'section':'账号处理'},'text':'测试事实'}]})
     assert score==1
     assert models.calls==2 and len(models.ledger)==2
     await models.close()
