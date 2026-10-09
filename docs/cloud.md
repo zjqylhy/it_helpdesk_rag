@@ -17,6 +17,8 @@ docker compose ps
 
 POSTGRES_PASSWORD 使用随机字母数字，Compose 会生成容器内数据库 URL，覆盖 Windows 的 DATABASE_URL。数据库端口默认仅发布到宿主机 127.0.0.1:5432，已有服务占用时在 `.env` 加 `POSTGRES_PORT=55433`。Go 和 RAG 不发布端口；Web 仅发布到 127.0.0.1:3000。
 
+模型凭据也可由云端启动环境注入 `DEEPSEEK_API_KEY` 与 `DASHSCOPE_API_KEY`（兼容 `QWEN_API_KEY`）；Compose 显式传给 RAG 容器。后续修改环境变量需重建容器以生效。
+
 Go 与 RAG 的上传卷都挂载到 `/data/uploads`，解决不同运行环境的文件路径差异；RAG 挂载只读。数据库使用 postgres 卷，原文件使用 uploads 卷。`.env` 和私有数据被构建上下文排除，不写入镜像。
 
 服务通过健康检查等待依赖就绪，退出后由 restart 策略拉起；健康检查失败本身不会触发重启。Compose 启动顺序依据 [Docker 官方说明](https://docs.docker.com/compose/how-tos/startup-order/)。

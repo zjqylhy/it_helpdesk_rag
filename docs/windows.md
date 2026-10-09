@@ -46,6 +46,10 @@ init 创建随机数据库密码、非超级用户 rag、业务库 rag，并启�
 
 Init 创建配置时会生成随机本地账号密码和内部令牌。已有配置需确认 INTERNAL_TOKEN 至少 24 字符，账号密码 12–72 字节。Check 只读取配置、探测数据库和 pgvector，不调用模型，也不打印密码或 Key。返回 0 表示检查通过，返回 1 会提示缺少的配置。
 
+模型 Key 也可以配置在 Windows 用户或系统环境变量中，名称为 `DEEPSEEK_API_KEY` 和 `DASHSCOPE_API_KEY`（兼容 `QWEN_API_KEY`）。Windows 脚本会补入当前进程尚未继承的这些变量，不写回 `.env`；已存在的进程变量优先。直接从终端启动服务时，应使用能读取这些变量的新终端。
+
+需要真实协议联调时运行 `tools/windows.ps1 -Action ModelCheck`：检查 Embedding 文档/查询输入、重排、JSON 生成及流式终态，最多发出五次模型 HTTP 请求（重试也计入），使用虚构短文本，不打印凭据、向量和回答原文。该操作会产生提供商调用费用；日常配置诊断仍使用不调用模型的 Check。
+
 如果 PowerShell 提示执行策略限制，可以对这次调用使用：
 
 ```powershell

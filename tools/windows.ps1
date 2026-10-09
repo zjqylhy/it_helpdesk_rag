@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('Check', 'Init', 'Setup', 'Run')]
+    [ValidateSet('Check', 'ModelCheck', 'Init', 'Setup', 'Run')]
     [string]$Action = 'Check',
     [ValidateSet('Backend', 'Rag', 'Web')]
     [string]$Service = 'Backend'
@@ -8,6 +8,15 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $env:PYTHONUTF8 = '1'
+
+# 当前桌面进程可能早于用户设置环境变量；只补入尚未继承的模型凭据。
+foreach ($keyName in @('DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'QWEN_API_KEY')) {
+    if (-not [Environment]::GetEnvironmentVariable($keyName, 'Process')) {
+        $savedValue = [Environment]::GetEnvironmentVariable($keyName, 'User')
+        if (-not $savedValue) { $savedValue = [Environment]::GetEnvironmentVariable($keyName, 'Machine') }
+        if ($savedValue) { [Environment]::SetEnvironmentVariable($keyName, $savedValue, 'Process') }
+    }
+}
 
 function Invoke-ProjectCommand {
     param([string]$Directory, [string]$Program, [string[]]$Arguments)
@@ -46,6 +55,14 @@ if ($Action -eq 'Setup') {
     Invoke-ProjectCommand (Join-Path $projectRoot 'frontend') 'npm.cmd' @('ci', '--cache', '../data/npm-cache')
     Write-Host '项目依赖安装完成。该命令不安装数据库，也不调用模型。'
     exit 0
+}
+
+if ($Action -eq 'ModelCheck') {
+    $pythonPath = Join-Path $projectRoot 'rag/.venv/Scripts/python.exe'
+    if (-not (Test-Path -LiteralPath $pythonPath)) { throw '请先运行 -Action Setup。' }
+    Push-Location (Join-Path $projectRoot 'rag')
+    try { & $pythonPath '-m' 'helpdesk.probe' } finally { Pop-Location }
+    exit $LASTEXITCODE
 }
 
 if ($Action -eq 'Check') {

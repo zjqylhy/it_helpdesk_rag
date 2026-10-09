@@ -17,7 +17,7 @@ Windows 不需要 Docker Desktop，按 [Windows 原生运行说明](docs/windows
 - JSONL 评测集修改、人工审核、冻结发布、文档变化影响清单、AI 修订建议和新题候选。
 - 四组检索、端到端重放、逐事实辅助评分、Ragas 忠实度、人工裁决、报告及清单一致续跑。
 
-当前仅完成工程验证，尚未接入用户真实 Key 和导出素材。测试替身与虚构测试文档只用于接口验证，不能证明正确率、召回率或真实 API 延迟达标。200 条真实黄金集待素材导入与人工审核后构建。
+工程验证与真实模型协议联调已通过：DeepSeek JSON/流式输出、Qwen Embedding（1024 维）与重排序可用。导出素材与 200 条真实黄金集仍待导入、构建和人工审核，当前结果不能证明业务正确率、召回率或实际问答延迟达标。
 
 ## Docker Compose 启动（可选）
 
@@ -31,7 +31,9 @@ docker compose up --build -d
 
 浏览器打开 [http://localhost:3000](http://localhost:3000)。使用 `.env` 中的管理员账号登录，创建适用组织明确的知识库，再上传导出文件。任务完成后进入知识问答。
 
-配置要求：`INTERNAL_TOKEN` 使用至少 24 字符随机值；账号密码为 12–72 字节。`POSTGRES_PASSWORD` 使用随机字母数字，Compose 生成的连接 URL 会直接使用该值。`DEEPSEEK_API_KEY` 与 `DASHSCOPE_API_KEY` 只放在服务端 `.env` 中。
+配置要求：`INTERNAL_TOKEN` 使用至少 24 字符随机值；账号密码为 12–72 字节。`POSTGRES_PASSWORD` 使用随机字母数字，Compose 生成的连接 URL 会直接使用该值。模型 Key 仅配置在服务端 `.env` 或运行环境中，不传到浏览器。
+
+模型凭据也支持运行环境注入，阿里兼容 `QWEN_API_KEY`；标准名称 `DASHSCOPE_API_KEY` 优先。Windows 用户/系统环境变量由本地启动脚本读取，Compose 将云端启动环境的 Key 显式传入 RAG 容器。
 
 阿里 `DASHSCOPE_BASE_URL` 填带 `https://` 的业务空间主机根地址，不包含接口路径。Embedding 和 Rerank 路径由适配器追加；维度默认 1024。DeepSeek 默认非思考模式，模型名与已确认方案一致。
 
@@ -111,6 +113,6 @@ cd frontend
 npm.cmd run build
 ```
 
-集成与浏览器验证命令、已通过项目和限制见 [验证记录](docs/verification.md)。真实模型最小探测使用 `cd rag; uv run python -m helpdesk.probe`，只在本地 Key 配置完成后执行。
+集成与浏览器验证命令、已通过项目和限制见 [验证记录](docs/verification.md)。Windows 真实模型探测使用 `tools/windows.ps1 -Action ModelCheck`；其他环境从 rag 执行 `uv run python -m helpdesk.probe`，配置完成后最多发出五次真实 HTTP 请求。
 
 需求和设计分别见 [首期 spec](docs/spec-v1.md)、[技术方案](docs/technical-plan-v1.md)。飞书机器人、自动同步、OCR、PPT、企业 SSO、多实例和生产级压测属于后续阶段。

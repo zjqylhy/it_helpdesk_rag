@@ -25,7 +25,25 @@ PostgreSQL 16.15 + pgvector 0.8.6 安装在项目 `data/native-postgres/`，仅�
 
 以上模型调用均使用本地替身。原生环境的 Worker 崩溃后租约接管、应用进程崩溃恢复和真实 API 仍未专项验证。
 
-模型替身服务来自 `rag/tests/fake_models.py`，测试文档明确为虚构的工程素材。替身回答与耗时不代表 DeepSeek/Qwen 的真实效果，不能使用这轮报告宣称达到业务指标。真实 Key、导出原文、开发集和 200 条经审核的测试题尚待提供/构建。
+模型替身服务来自 `rag/tests/fake_models.py`，测试文档明确为虚构的工程素材。替身回答与耗时不代表 DeepSeek/Qwen 的真实效果，不能使用这轮报告宣称达到业务指标。真实 Key 已由用户配置并完成下述协议联调；导出原文、开发集和 200 条经审核的测试题尚待提供/构建。
+
+## 2026-10-10 真实模型协议联调
+
+用户将 Key 配置在 Windows 用户环境变量 `DEEPSEEK_API_KEY` / `QWEN_API_KEY`。启动脚本补入当前进程未继承的凭据；Python 配置和云端 Compose 均支持 QWEN 别名，非空标准名 DASHSCOPE 优先。凭据未打印，也未复制到仓库配置。
+
+通过 `tools/windows.ps1 -Action ModelCheck` 调用当前适配器，使用虚构短文本，共五次 HTTP 请求，无重试：
+
+| 检查 | 结果 | 本次耗时 |
+| --- | --- | --- |
+| qwen3.7-text-embedding 文档输入 | 2 条，1024 维，数量/顺序/数值有效 | 0.44 秒 |
+| qwen3.7-text-embedding 查询输入 | 1 条，1024 维，数量/数值有效 | 0.13 秒 |
+| qwen3.7-text-rerank | 返回 2 条有效结果，相关文档排名首位 | 0.11 秒 |
+| deepseek-v4-pro JSON 输出 | JSON 可解析，完整结束，符合短提示 | 0.53 秒 |
+| deepseek-v4-pro 流式输出 | 正文非空，finish_reason=stop 且收到 DONE | 0.82 秒 |
+
+记录用量：Embedding 58 + 20 token，Rerank 184 token，LLM 总计 73 token；金额未换算。以上耗时只代表本次小输入的协议检查，未验证真实业务文档上的端到端问答、RAG 指标或稳定性。
+
+新增配置别名与优先级测试后 pytest 为 17 项通过。Windows Check 配置及数据库检查通过，Python 工具与 PowerShell 语法、Compose 静态配置均校验通过。
 
 ## 复现工程联测
 

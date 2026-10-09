@@ -19,6 +19,7 @@ def main():
     ready = True
     for key in ('INTERNAL_TOKEN','ADMIN_USER','ADMIN_PASSWORD','USER_NAME','USER_PASSWORD','DEEPSEEK_API_KEY','DASHSCOPE_API_KEY'):
         item = value(key)
+        if key == 'DASHSCOPE_API_KEY': item = item or value('QWEN_API_KEY')
         valid = bool(item) and not item.startswith('replace-with-')
         if key == 'INTERNAL_TOKEN': valid = valid and len(item) >= 24
         if key.endswith('_PASSWORD'): valid = valid and 12 <= len(item.encode()) <= 72
