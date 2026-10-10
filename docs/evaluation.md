@@ -111,6 +111,10 @@ foreach ($member in $testIndex.members) {
 
 `proposed-decisions.jsonl` 是依据事实/行为辅助评分生成的 200 条裁决草案，全部为 pending，未填写人工审核人，不直接导入 `adjudicate`。用户核对实际答案后确认草案或按题号修正，再生成包含审核人、理由、确认记录和审核包校验值的正式人工裁决。忠实度或引用语义分歧提示不自动等同于答案错误；本轮有 18 条事实/行为未通过、共 51 条带复核提示。
 
+用户已于 2026-10-10 确认该裁决草案。正式记录为 `reports/test-200-v1/human-decisions-D.jsonl`，通过既有 `adjudicate` 另存 `human-reviewed-D/`；200 题均已裁决，正式答案正确率 144/160，拒答 25/25、澄清 13/15，待裁决数为 0。原草案和审核包仍保留 pending 的历史状态；当前正式状态以新报告为准，不回写原始模型成绩。
+
+`human-reviewed-D/acceptance.json` 和 `human-segments.json` 单独记录全部行为及分库、分场景的人工结果。既有 `summary.json` 的 `human_reviewed=160` 仅统计可回答题，不能理解为只审核了 160 题；`acceptance.json` 的 `human_adjudicated_total=200` 记录全部实际答案裁决。`summary.json` 的拒答/澄清字段仍是辅助评分，正式人工口径使用 `acceptance.json` 的 `official_by_behavior`。本轮只处理本地记录，无新增模型调用。
+
 ## 指标解释
 
 - Recall@5 是每题必要证据组覆盖率再取平均；完整覆盖和 MRR 单独报告。
