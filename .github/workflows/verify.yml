@@ -45,11 +45,27 @@ jobs:
       - name: Cross-service contracts on native PostgreSQL
         shell: bash
         run: |
+          service_pids=()
+          cleanup() {
+            # 测试成功或失败都释放后台服务，避免收尾阶段仍有进程占用资源。
+            for pid in "${service_pids[@]}"; do
+              kill "$pid" 2>/dev/null || true
+            done
+            for pid in "${service_pids[@]}"; do
+              wait "$pid" 2>/dev/null || true
+            done
+          }
+          trap cleanup EXIT
+
           (cd rag && uv run python -m tests.legacy_seed)
-          (cd backend && ../data/backend >../data/go-test.log 2>&1) &
+          (cd backend && exec ../data/backend >../data/go-test.log 2>&1) &
+          service_pids+=("$!")
           for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:8080/health && break; sleep 1; done
-          (cd rag && uv run uvicorn tests.fake_models:app --host 127.0.0.1 --port 8100 >../data/model-test.log 2>&1) &
-          (cd rag && uv run python -m helpdesk >../data/rag-test.log 2>&1) &
+          # uv sync 已创建虚拟环境；常驻服务直接启动，避免 uv run 长时间持有缓存锁。
+          (cd rag && exec .venv/bin/python -m uvicorn tests.fake_models:app --host 127.0.0.1 --port 8100 >../data/model-test.log 2>&1) &
+          service_pids+=("$!")
+          (cd rag && exec .venv/bin/python -m helpdesk >../data/rag-test.log 2>&1) &
+          service_pids+=("$!")
           for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:8000/health && break; sleep 1; done
           cd rag
           uv run python -m tests.integration_check
