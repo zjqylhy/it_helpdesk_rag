@@ -315,7 +315,11 @@ Go 校验指定 ID 并保留最多四条 completed/clarify 消息；默认库和
 - 独立无头 Edge 页面验证用户/组加载、创建用户、文档权限保存和空组提示；截图 `data/screenshots/document-access.png` 已目视检查。首轮页面脚本没有清除既有授权组却期待空组提示，修正测试操作后通过；Vite 环境变量读取曾出现 Node 类型缺失，改用 loadEnv 后生产构建通过。
 - 隔离库 `rag_scope_contract_1791646019`、`rag_scope_contract_1791646311`、`rag_scope_contract_1791646417` 保留，测试服务已停止。CI 加入旧结构迁移和授权契约，本轮未执行 GitHub Actions。
 
-本轮本地 Docker 升级和页面人工验收待完成；反馈、看板、压测和新正式跨库评测仍按后续批次实施。
+本地 Docker 已升级到权限代码提交 `87c538a`，四服务 healthy。升级前在无生成/导入任务时停止应用写入，成对备份数据库和原文件到 `data/docker-validation/before-access-20261010T153756Z/`，随后恢复服务并构建部署；本轮没有声称该新备份已完成独立恢复。
+
+升级后核对仍为 8 库、10 文档、721 切片，10 份文件 SHA256 与版本记录一致，全部旧文档 all_users。数据库中的原版本、17 条历史答案及状态与升级前一致；两类账号 API 读取历史未错误遮蔽旧的 completed/clarify/refused 回答。Docker 用户/权限页、旧文档授权配置及切片入口通过浏览器验证，截图已目视检查，无页面脚本错误。页面脚本首次读取权限时未等待异步加载，补齐等待后通过。私有证据为 `data/docker-validation/access-live-check.json`、`access-users-live.png`、`access-document-live.png`，新增模型调用为 0。
+
+本轮页面人工验收待用户确认，下一批为反馈/看板；工程压测和新正式跨库评测尚未实施。原生旧服务没有升级，使用原生模式时需重启 Go/Python/Vue。本轮完整语料备份恢复仍属于 C 批待验证项。
 
 ## 复现工程联测
 
