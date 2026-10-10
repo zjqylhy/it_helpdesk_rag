@@ -10,6 +10,7 @@ from .providers import Models, ProviderError
 from .store import Store
 from .worker import worker
 from .pipeline import Pipeline
+from .access import AuthorizedStore, AccessDenied
 
 settings = Settings()
 store = Store(settings)
@@ -36,6 +37,8 @@ class Chat(BaseModel):
     question: str = Field(min_length=1, max_length=12000)
     history: list[dict[str,str]] = Field(default_factory=list, max_length=8)
     request_id: str
+    user_id: str = Field(min_length=1, max_length=128)
+    authorization_revision: int = Field(ge=0)
 
 @app.get('/health')
 async def health():
@@ -50,12 +53,17 @@ async def chat(body: Chat, x_internal_token: str = Header(default='')):
         raise HTTPException(400, detail='知识范围重复')
     if any(not value.strip() or len(value) > 128 for value in body.kb_ids):
         raise HTTPException(400, detail='知识范围无效')
+    authorized = AuthorizedStore(settings, body.user_id, body.authorization_revision)
+    try:
+        await authorized.bind()
+    except AccessDenied:
+        raise HTTPException(403, detail='资料不存在或不可访问')
     async def stream():
         # 每请求独立用量，避免并发会话的 Token 统计混合。
         models = Models(settings)
         models.online = online_limit
         models.embeddings_limit = embedding_limit
-        pipeline = Pipeline(store, models)
+        pipeline = Pipeline(authorized, models)
         pipeline.indices = indices
         try:
             async for event, data in pipeline.events(body.kb_id, body.question, body.history, kb_ids=body.kb_ids):

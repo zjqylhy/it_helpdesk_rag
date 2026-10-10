@@ -5,6 +5,16 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 
 app=FastAPI()
+recorded_requests=[]
+
+@app.get('/test/requests')
+async def requests():
+    return recorded_requests
+
+@app.delete('/test/requests')
+async def clear_requests():
+    recorded_requests.clear()
+    return {'ok':True}
 
 @app.post('/api/v1/services/embeddings/text-embedding/text-embedding')
 async def embedding(request: Request):
@@ -19,6 +29,7 @@ async def rerank(request: Request):
 @app.post('/chat/completions')
 async def completion(request: Request):
     body=await request.json();system=body['messages'][0]['content'];payload=json.loads(body['messages'][-1]['content'])
+    recorded_requests.append(body)
     if not body.get('stream'):
         if 'available_knowledge_bases' in payload:
             available = payload['available_knowledge_bases']

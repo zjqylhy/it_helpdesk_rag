@@ -15,7 +15,12 @@ async def main():
         assert (await client.post('/knowledge-bases',headers=user,json={'name':'非法','organization':'测试'})).status_code==403
         async def upload(data,doc=None):
             r=await client.post('/documents'+('/'+doc+'/versions' if doc else ''),headers=admin,
-                                data={'kb_id':kb},files={'file':('contract.txt',data,'text/plain')});r.raise_for_status();return r.json()
+                                data={'kb_id':kb},files={'file':('contract.txt',data,'text/plain')});r.raise_for_status()
+            imported=r.json()
+            if doc is None:
+                grant=await client.put('/admin/documents/'+imported['document_id']+'/access',headers=admin,json={'visibility':'all_users','group_ids':[]})
+                grant.raise_for_status()
+            return imported
         async def wait_job(version):
             for _ in range(80):
                 docs=(await client.get('/documents',params={'kb_id':kb},headers=admin)).json()

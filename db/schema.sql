@@ -51,3 +51,30 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE UNIQUE INDEX IF NOT EXISTS one_generation_per_session ON messages(session_id) WHERE status='generating';
 CREATE INDEX IF NOT EXISTS chunks_version ON chunks(version_id);
 CREATE INDEX IF NOT EXISTS jobs_queue ON ingestion_jobs(status,lease_until);
+
+-- 一次性迁移旧资料为全员可读；之后新文档默认仅管理员可读。
+CREATE TABLE IF NOT EXISTS schema_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled boolean NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS usage_kind text NOT NULL DEFAULT 'demo';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'all_users';
+ALTER TABLE documents ALTER COLUMN visibility SET DEFAULT 'groups';
+CREATE TABLE IF NOT EXISTS user_groups(id text PRIMARY KEY, name text UNIQUE NOT NULL);
+CREATE TABLE IF NOT EXISTS user_group_members(
+ group_id text NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
+ user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(group_id,user_id));
+CREATE INDEX IF NOT EXISTS group_members_user ON user_group_members(user_id);
+CREATE TABLE IF NOT EXISTS document_group_grants(
+ document_id text NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+ group_id text NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE, PRIMARY KEY(document_id,group_id));
+CREATE TABLE IF NOT EXISTS authorization_state(id integer PRIMARY KEY CHECK(id=1), revision bigint NOT NULL DEFAULT 0);
+INSERT INTO authorization_state(id) VALUES(1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS audit_events(
+ id text PRIMARY KEY, actor_id text REFERENCES users(id), action text NOT NULL,
+ target_id text NOT NULL, details jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS provenance jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS usage_kind text NOT NULL DEFAULT 'demo';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS strategy_version text NOT NULL DEFAULT 'legacy';
+INSERT INTO audit_events(id,action,target_id,details)
+ SELECT 'migration-access-v2','migration','documents','{"existing_visibility":"all_users","new_default":"groups"}'
+ WHERE NOT EXISTS(SELECT 1 FROM schema_migrations WHERE version=2) ON CONFLICT DO NOTHING;
+INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING;

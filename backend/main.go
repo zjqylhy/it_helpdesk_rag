@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,8 @@ type app struct {
 	db                        *pgxpool.Pool
 	ragURL, internal, uploads string
 	client                    *http.Client
+	policy                    sync.RWMutex
+	flights                   sync.Map
 }
 type user struct{ ID, Role string }
 
@@ -96,7 +99,7 @@ func main() {
 		}
 		hash, _ := bcrypt.GenerateFromPassword([]byte(account.password), bcrypt.DefaultCost)
 		// 本地配置是演示账号的唯一来源，修改配置后重启即可更新密码。
-		_, e = db.Exec(ctx, `INSERT INTO users VALUES($1,$2,$3,$4) ON CONFLICT(username) DO UPDATE SET password_hash=$3,role=$4`, id(), account.name, string(hash), account.role)
+		_, e = db.Exec(ctx, `INSERT INTO users(id,username,password_hash,role) VALUES($1,$2,$3,$4) ON CONFLICT(username) DO UPDATE SET password_hash=$3,role=$4`, id(), account.name, string(hash), account.role)
 		if e != nil {
 			log.Fatal(e)
 		}
@@ -104,7 +107,7 @@ func main() {
 	// 重启时旧进程持有的生成任务已经无法继续，保留其不完整回答。
 	_, _ = db.Exec(ctx, `UPDATE messages SET status='interrupted' WHERE status='generating'`)
 	r := a.routes()
-	srv := &http.Server{Addr: env("HTTP_ADDR", "127.0.0.1:8080"), Handler: r, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+	srv := &http.Server{Addr: env("HTTP_ADDR", "127.0.0.1:8080"), Handler: r, ReadHeaderTimeout: 10 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 60 * time.Second}
 	log.Println("业务服务监听 ", srv.Addr)
 	log.Fatal(srv.ListenAndServe())
 }
@@ -123,6 +126,7 @@ func (a *app) routes() *gin.Engine {
 	api := r.Group("/api/v1")
 	api.POST("/auth/login", a.login)
 	api.Use(a.auth)
+	api.Use(a.policyRead)
 	api.POST("/auth/logout", func(c *gin.Context) {
 		_, _ = a.db.Exec(c, `DELETE FROM tokens WHERE token_hash=$1`, digest(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")))
 		c.Status(204)
@@ -143,6 +147,7 @@ func (a *app) routes() *gin.Engine {
 	api.POST("/sessions", a.createSession)
 	api.GET("/sessions/:id/messages", a.messages)
 	api.POST("/chat", a.chat)
+	a.accessRoutes(api)
 	return r
 }
 func (a *app) login(c *gin.Context) {
@@ -156,7 +161,7 @@ func (a *app) login(c *gin.Context) {
 		return
 	}
 	var uid, hash, role string
-	e := a.db.QueryRow(c, `SELECT id,password_hash,role FROM users WHERE username=$1`, q.Username).Scan(&uid, &hash, &role)
+	e := a.db.QueryRow(c, `SELECT id,password_hash,role FROM users WHERE username=$1 AND NOT disabled`, q.Username).Scan(&uid, &hash, &role)
 	if e != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(q.Password)) != nil {
 		fail(c, 401, "账号或密码错误")
 		return
@@ -176,7 +181,7 @@ func (a *app) auth(c *gin.Context) {
 		return
 	}
 	var u user
-	e := a.db.QueryRow(c, `SELECT u.id,u.role FROM tokens t JOIN users u ON u.id=t.user_id WHERE token_hash=$1 AND expires_at>now()`, digest(strings.TrimPrefix(header, "Bearer "))).Scan(&u.ID, &u.Role)
+	e := a.db.QueryRow(c, `SELECT u.id,u.role FROM tokens t JOIN users u ON u.id=t.user_id WHERE token_hash=$1 AND expires_at>now() AND NOT u.disabled`, digest(strings.TrimPrefix(header, "Bearer "))).Scan(&u.ID, &u.Role)
 	if e != nil {
 		fail(c, 401, "登录已过期")
 		return
@@ -214,7 +219,10 @@ func (a *app) query(c *gin.Context, sql string, args ...any) {
 	}
 	c.JSON(200, results)
 }
-func (a *app) listKB(c *gin.Context) { a.query(c, `SELECT * FROM knowledge_bases ORDER BY name`) }
+func (a *app) listKB(c *gin.Context) {
+	u := c.MustGet("user").(user)
+	a.query(c, `SELECT k.* FROM knowledge_bases k WHERE $2::boolean OR EXISTS(SELECT 1 FROM documents d WHERE d.kb_id=k.id AND `+documentAccess("$1", "$2")+`) ORDER BY name`, u.ID, u.Role == "admin")
+}
 func (a *app) createKB(c *gin.Context) {
 	var q struct {
 		Name          string `json:"name"`
@@ -257,7 +265,7 @@ func (a *app) listDocuments(c *gin.Context) {
  latest.id AS latest_version,latest.filename,latest.created_at AS version_created_at
  FROM documents d LEFT JOIN document_versions v ON v.id=d.active_version
  LEFT JOIN LATERAL (SELECT * FROM document_versions WHERE document_id=d.id ORDER BY created_at DESC,id DESC LIMIT 1) latest ON true
- LEFT JOIN ingestion_jobs j ON j.version_id=latest.id WHERE d.kb_id=$1 ORDER BY d.created_at DESC`, c.Query("kb_id"))
+ LEFT JOIN ingestion_jobs j ON j.version_id=latest.id WHERE d.kb_id=$1 AND `+documentAccess("$2", "$3")+` ORDER BY d.created_at DESC`, c.Query("kb_id"), c.MustGet("user").(user).ID, c.MustGet("user").(user).Role == "admin")
 }
 func (a *app) upload(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 21<<20)
@@ -357,9 +365,15 @@ func (a *app) upload(c *gin.Context) {
 	c.JSON(202, gin.H{"document_id": docID, "version_id": version, "job_id": job})
 }
 func (a *app) versions(c *gin.Context) {
+	if !a.requireDocument(c, c.Param("id")) {
+		return
+	}
 	a.query(c, `SELECT v.id,v.filename,v.source,v.status,v.error,v.created_at,v.embedding_model,v.dimension,j.id AS job_id,j.progress FROM document_versions v LEFT JOIN ingestion_jobs j ON j.version_id=v.id WHERE document_id=$1 ORDER BY v.created_at DESC`, c.Param("id"))
 }
 func (a *app) chunks(c *gin.Context) {
+	if !a.requireDocument(c, c.Param("id")) {
+		return
+	}
 	a.query(c, `SELECT c.id,c.text,c.locator,c.ordinal FROM chunks c JOIN document_versions v ON v.id=c.version_id WHERE v.document_id=$1 AND v.id=$2 ORDER BY ordinal`, c.Param("id"), c.Param("version"))
 }
 
@@ -435,7 +449,8 @@ func (a *app) retry(c *gin.Context) {
 }
 func (a *app) file(c *gin.Context) {
 	var path, name string
-	if a.db.QueryRow(c, `SELECT path,filename FROM document_versions WHERE id=$1`, c.Param("version")).Scan(&path, &name) != nil {
+	u := c.MustGet("user").(user)
+	if a.db.QueryRow(c, `SELECT v.path,v.filename FROM document_versions v JOIN documents d ON d.id=v.document_id WHERE v.id=$1 AND `+documentAccess("$2", "$3"), c.Param("version"), u.ID, u.Role == "admin").Scan(&path, &name) != nil {
 		fail(c, 404, "文件不存在")
 		return
 	}
@@ -462,7 +477,8 @@ func (a *app) createSession(c *gin.Context) {
 	}
 	if len(selected) > 0 {
 		var count int
-		if a.db.QueryRow(c, `SELECT count(*) FROM knowledge_bases WHERE id=ANY($1::text[])`, selected).Scan(&count) != nil {
+		u := c.MustGet("user").(user)
+		if a.db.QueryRow(c, `SELECT count(*) FROM knowledge_bases k WHERE id=ANY($1::text[]) AND ($3::boolean OR EXISTS(SELECT 1 FROM documents d WHERE d.kb_id=k.id AND `+documentAccess("$2", "$3")+`))`, selected, u.ID, u.Role == "admin").Scan(&count) != nil {
 			fail(c, 500, "知识范围读取失败")
 			return
 		}
@@ -502,7 +518,12 @@ func (a *app) messages(c *gin.Context) {
 	if _, ok := a.owned(c, c.Param("id")); !ok {
 		return
 	}
-	a.query(c, `SELECT * FROM messages WHERE session_id=$1 ORDER BY created_at,id`, c.Param("id"))
+	items, err := a.readMessages(c, c.Param("id"))
+	if err != nil {
+		fail(c, 500, "历史读取失败")
+		return
+	}
+	c.JSON(200, items)
 }
 
 func (a *app) chat(c *gin.Context) {
@@ -521,7 +542,14 @@ func (a *app) chat(c *gin.Context) {
 		return
 	}
 	mid := id()
-	_, e := a.db.Exec(c, `INSERT INTO messages(id,session_id,request_id,question) VALUES($1,$2,$3,$4)`, mid, q.Session, q.Request, q.Question)
+	chatCtx, cancel, revision, documents, usage, err := a.prepareChat(c, kbs, mid)
+	if err != nil {
+		fail(c, 404, "资料不存在或不可访问")
+		return
+	}
+	defer func() { cancel(); a.flights.Delete(mid) }()
+	prov, _ := json.Marshal(provenance{Documents: documents, Verified: true})
+	_, e := a.db.Exec(c, `INSERT INTO messages(id,session_id,request_id,question,provenance,usage_kind,strategy_version) VALUES($1,$2,$3,$4,$5,$6,'qa-v3-scope-access')`, mid, q.Session, q.Request, q.Question, string(prov), usage)
 	if e != nil {
 		fail(c, 409, "该请求已保存，或会话正在生成；请刷新历史后重试")
 		return
@@ -542,31 +570,27 @@ func (a *app) chat(c *gin.Context) {
 	}()
 	_, _ = a.db.Exec(c, `UPDATE sessions SET title=$2 WHERE id=$1 AND title='新会话'`, q.Session, string([]rune(q.Question)[:min(30, len([]rune(q.Question)))]))
 	history := []map[string]string{}
-	rows, e := a.db.Query(c, `SELECT question,answer,status FROM (SELECT question,answer,status,created_at,id FROM messages WHERE session_id=$1 AND status IN ('completed','clarify') ORDER BY created_at DESC,id DESC LIMIT 4) h ORDER BY created_at,id`, q.Session)
-	if e != nil {
+	a.policy.RLock()
+	previous, historyErr := a.readMessages(c, q.Session)
+	a.policy.RUnlock()
+	if historyErr != nil {
 		status = "error"
 		fail(c, 500, "历史读取失败")
 		return
 	}
-	for rows.Next() {
-		var question, ans, state string
-		if rows.Scan(&question, &ans, &state) != nil {
-			rows.Close()
-			status = "error"
-			fail(c, 500, "历史读取失败")
-			return
+	for _, m := range previous {
+		state, _ := m["status"].(string)
+		if state == "completed" || state == "clarify" {
+			question, _ := m["question"].(string)
+			ans, _ := m["answer"].(string)
+			history = append(history, map[string]string{"role": "user", "content": question}, map[string]string{"role": "assistant", "content": ans, "status": state})
 		}
-		history = append(history, map[string]string{"role": "user", "content": question}, map[string]string{"role": "assistant", "content": ans, "status": state})
 	}
-	if rows.Err() != nil {
-		rows.Close()
-		status = "error"
-		fail(c, 500, "历史读取失败")
-		return
+	if len(history) > 8 {
+		history = history[len(history)-8:]
 	}
-	rows.Close()
-	body, _ := json.Marshal(gin.H{"kb_ids": kbs, "question": q.Question, "history": history, "request_id": q.Request})
-	req, e := http.NewRequestWithContext(c.Request.Context(), "POST", a.ragURL+"/internal/chat", bytes.NewReader(body))
+	body, _ := json.Marshal(gin.H{"kb_ids": kbs, "question": q.Question, "history": history, "request_id": q.Request, "user_id": c.MustGet("user").(user).ID, "authorization_revision": revision})
+	req, e := http.NewRequestWithContext(chatCtx, "POST", a.ragURL+"/internal/chat", bytes.NewReader(body))
 	if e != nil {
 		status = "error"
 		fail(c, 500, "服务请求失败")
@@ -594,14 +618,23 @@ func (a *app) chat(c *gin.Context) {
 	event := ""
 	terminal := false
 	seq := 0
-	send := func(kind string, data map[string]any) {
+	send := func(kind string, data map[string]any) bool {
+		a.policy.RLock()
+		defer a.policy.RUnlock()
+		var current int64
+		if chatCtx.Err() != nil || a.db.QueryRow(chatCtx, `SELECT revision FROM authorization_state WHERE id=1`).Scan(&current) != nil || current != revision {
+			return false
+		}
 		seq++
 		data["request_id"] = q.Request
 		data["seq"] = seq
 		data["message_id"] = mid
 		b, _ := json.Marshal(data)
-		_, _ = fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", kind, b)
+		if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", kind, b); err != nil {
+			return false
+		}
 		c.Writer.Flush()
+		return true
 	}
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -638,7 +671,10 @@ func (a *app) chat(c *gin.Context) {
 			status = "error"
 			trace = data
 		}
-		send(event, data)
+		if !send(event, data) {
+			status = "interrupted"
+			return
+		}
 		if terminal {
 			break
 		}

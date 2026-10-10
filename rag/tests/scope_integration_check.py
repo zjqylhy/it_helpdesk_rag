@@ -29,6 +29,8 @@ async def main():
                 files={'file': (name + '.txt', (organization + 'VPN：打开客户端并输入本校服务器地址。').encode(), 'text/plain')})
             response.raise_for_status()
             imported = response.json()
+            grant=await client.put('/admin/documents/'+imported['document_id']+'/access',headers=admin,json={'visibility':'all_users','group_ids':[]})
+            grant.raise_for_status()
             for _ in range(100):
                 response = await client.get('/documents', headers=admin, params={'kb_id': kb})
                 response.raise_for_status()
