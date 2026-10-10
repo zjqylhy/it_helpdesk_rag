@@ -23,6 +23,8 @@
 
 同日用户补充需支持云上部署。首期云部署采用 Linux 单机 Docker Compose，业务代码与 Windows 共用；数据库及原文件使用持久化卷，Go 与 RAG 共用 `/data/uploads`，外部通过宿主机 HTTPS 代理访问。Compose 补齐健康检查和进程退出后的自动重启，默认保持单个 Go 与 RAG 实例。跨机器、多副本需要对象存储与索引/会话并发协调，另行扩展。见 [云部署说明](cloud.md)。
 
+2026-10-10 用户已安装 Docker Desktop，按上述既有 Compose 方案增加 Windows 启动入口 `tools/docker.ps1`。本地默认项目 `it-helpdesk-rag-docker`、Web 3000 与数据库 55533；云端继续使用同一 `compose.yaml`，通过环境配置端口和模型凭据。数据库及原文件卷独立于原生开发环境，不自动迁移原生历史。
+
 BM25 为首期单 RAG 实例的内存索引，以 PostgreSQL 中不可变的已发布切片快照重建，适合当前演示范围。容量增加或需要多实例时再迁移关键词索引服务；此方案不宣称支持原 PRD 的生产级规模。
 
 ## 2. 服务边界

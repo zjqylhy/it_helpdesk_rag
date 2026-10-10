@@ -31,7 +31,13 @@ services:
       timeout: 3s
       retries: 20
   rag:
-    build: {context: ., dockerfile: rag/Dockerfile}
+    build:
+      context: .
+      dockerfile: rag/Dockerfile
+      args:
+        PYPI_DOWNLOAD_HOST: ${PYPI_DOWNLOAD_HOST:-files.pythonhosted.org}
+        UV_DEFAULT_INDEX: ${UV_BUILD_INDEX:-https://pypi.org/simple}
+        APP_REVISION: ${APP_REVISION:-unknown}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -49,7 +55,7 @@ services:
   web:
     build: {context: ., dockerfile: frontend/Dockerfile}
     restart: unless-stopped
-    ports: ["127.0.0.1:3000:80"]
+    ports: ["127.0.0.1:${WEB_PORT:-3000}:80"]
     depends_on:
       backend: {condition: service_healthy}
       rag: {condition: service_healthy}

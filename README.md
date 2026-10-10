@@ -2,7 +2,7 @@
 
 用于求职展示的知识问答项目。首期提供 Web 问答、知识管理和离线评测，需求与技术方案已由用户确认。
 
-Windows 不需要 Docker Desktop，按 [Windows 原生运行说明](docs/windows.md) 配置数据库并启动。Docker Compose 是可选部署方案。
+Windows 可使用 Docker Desktop 部署完整应用，也可按 [Windows 原生运行说明](docs/windows.md) 开发调试。
 
 云上支持 Linux 单机 Docker Compose，共用应用代码，见 [云部署说明](docs/cloud.md)。
 
@@ -23,15 +23,24 @@ Windows 不需要 Docker Desktop，按 [Windows 原生运行说明](docs/windows
 
 ## Docker Compose 启动（可选）
 
-安装 Docker Desktop，并启用 Linux 容器。在项目根目录执行：
+安装并启动 Docker Desktop，启用 Linux 容器。在项目根目录执行；已有 `.env` 时保留配置：
 
 ```powershell
-Copy-Item .env.example .env
-# 编辑 .env，填写模型 Key、业务空间 HTTPS 地址及本地账号。
-docker compose up --build -d
+# 首次初始化，已有 .env 则跳过，并填写模型地址和数据库密码。
+.\tools\windows.ps1 -Action Init
+.\tools\docker.ps1 -Action Check
+.\tools\docker.ps1 -Action Start
 ```
 
-浏览器打开 [http://localhost:3000](http://localhost:3000)。使用 `.env` 中的管理员账号登录，创建适用组织明确的知识库，再上传导出文件。任务完成后进入知识问答。
+浏览器打开 [http://localhost:3000](http://localhost:3000)。使用 `.env` 中的管理员账号登录，创建适用组织明确的知识库，再上传导出文件。任务完成后进入知识问答。脚本使用独立项目 `it-helpdesk-rag-docker`，数据库端口默认 55533，与原生环境分开；可用 `-WebPort` 和 `-PostgresPort` 调整端口，后续启动保持相同参数。
+
+```powershell
+.\tools\docker.ps1 -Action Status
+.\tools\docker.ps1 -Action Logs
+.\tools\docker.ps1 -Action Stop
+```
+
+Stop 删除本项目容器但保留命名卷，再次 Start 可恢复数据。Docker 数据库不会自动读取原生数据库的文档、会话或本机评测报告。云端使用相同 Compose 配置；初始化、HTTPS、升级与迁移见 [云部署说明](docs/cloud.md)。
 
 配置要求：`INTERNAL_TOKEN` 使用至少 24 字符随机值；账号密码为 12–72 字节。`POSTGRES_PASSWORD` 使用随机字母数字，Compose 生成的连接 URL 会直接使用该值。模型 Key 仅配置在服务端 `.env` 或运行环境中，不传到浏览器。
 
@@ -41,7 +50,7 @@ docker compose up --build -d
 
 原文件和数据库保存在 Docker 命名卷中。Python 服务和 Go API 未发布到主机端口，浏览器经 Web 的 `/api/` 代理访问。数据库端口只绑定本机，供本地评测 CLI 使用。
 
-当前环境没有 Docker，Compose 尚未实际启动验证。Windows 原生 PostgreSQL 16.15 + pgvector 0.8.6 已验证跨服务流程、请求并发互斥和数据库重启持久化，详见 [验证记录](docs/verification.md)。
+2026-10-10 已在 Windows Docker Desktop 的 Linux 引擎实测：四服务健康、真实文件上传与问答引用、网页、容器重建持久化及独立数据库/文件备份恢复通过。验证库包含 1 份真实打印机文档、72 个 1024 维切片；原生环境的 9 份文档和历史未自动迁移。容器内评测工具与 Ragas 适配器也已验证，实际云服务器与 HTTPS 仍待验收。详见 [验证记录](docs/verification.md)。
 
 ## Windows 本地开发（默认）
 

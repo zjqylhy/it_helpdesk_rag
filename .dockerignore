@@ -1,6 +1,9 @@
 .git
 .env*
+**/.env*
 data
+**/data
+**/uploads
 doc-fetch-resources
 reports
 eval/private
@@ -8,5 +11,6 @@ eval/private
 **/dist
 **/.venv*
 **/__pycache__
+**/*.log
 tools
 rag/tests

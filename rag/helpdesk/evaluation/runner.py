@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -9,8 +10,11 @@ from .report import report
 from ..pipeline import Pipeline, PROMPT_VERSION
 
 def git_commit():
+    # 容器不包含 .git，使用构建时注入的版本保持续跑清单可比较。
+    if revision := os.environ.get('APP_REVISION'):
+        return revision
     try:
-        return subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+        return subprocess.check_output(['git','rev-parse','HEAD'], text=True, stderr=subprocess.DEVNULL).strip()
     except (OSError,subprocess.CalledProcessError):
         return 'unknown'
 
