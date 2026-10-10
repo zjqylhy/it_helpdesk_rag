@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('Check', 'Start', 'Stop', 'Status', 'Logs')]
     [string]$Action = 'Start',
     [ValidateRange(1, 65535)]

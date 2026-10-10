@@ -272,6 +272,12 @@ Go、Vue 生产镜像及 Python 3.12 RAG 镜像构建通过，PostgreSQL 17.11 +
 
 实际云服务器、HTTPS/公网、浏览器延迟目标与文档更新工时仍待验证。部署操作、成对备份恢复、原生历史迁移限制及容器内评测步骤见 [云部署说明](cloud.md)。本次交付的人工部署验收待用户确认。
 
+## 2026-10-10 Windows PowerShell 5.1 编码兼容修复
+
+`tools/docker.ps1` 原为无 BOM 的 UTF-8，在 Windows PowerShell 5.1.26100.9444 下复现 14 个解析错误，与用户报告一致。补齐 UTF-8 BOM，按字节核对脚本正文保持一致；`tools/windows.ps1` 原已包含 BOM。
+
+两个入口在 PowerShell 5.1.26100.9444 和 PowerShell 7.6.5 下均为零解析错误。使用 PowerShell 5.1 实际执行 Docker `Check`、`Status` 通过，四个现有容器均 healthy，中文提示正常。验证进程使用 `-ExecutionPolicy Bypass`，未修改系统执行策略；未重建容器或重跑模型评测。Windows 部署说明补充编辑脚本时保留 BOM 的要求。
+
 ## 复现工程联测
 
 先安装前端、RAG 和 tools 的依赖。在分别的终端启动以下服务：

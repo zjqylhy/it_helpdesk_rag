@@ -4,6 +4,8 @@
 
 已安装 Docker Desktop 时，可按 [README 的 Compose 入口](../README.md#docker-compose-启动可选) 启动完整应用：`.\tools\docker.ps1 -Action Start`。Docker 项目使用独立命名卷、网页 3000 和数据库 55533 端口；原生环境用于源码开发与调试。两套数据独立，原生的 55433 数据库不会自动迁移。
 
+`tools/*.ps1` 使用 UTF-8 with BOM 编码，兼容 Windows PowerShell 5.1 和 PowerShell 7。编辑后请保留 BOM；PowerShell 5.1 在中文系统上可能将无 BOM 的 UTF-8 当作系统编码读取，导致中文乱码和字符串解析错误。
+
 构建需要代理时，可用 `.\tools\docker.ps1 -Action Start -BuildProxy http://host.docker.internal:33210`；将端口替换为实际代理端口。镜像拉取仍由 Docker Desktop 引擎负责，需配置其可用的网络/代理。`127.0.0.1` 在构建容器内指向容器自身，不能直接作为 Windows 主机代理地址。
 
 PyPI 大文件下载持续超时时，可在 `.env` 设置 `PYPI_DOWNLOAD_HOST=pypi.tuna.tsinghua.edu.cn` 和 `UV_BUILD_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple` 后重新启动。前者替换锁定包下载主机，后者用于源码包的构建依赖索引；`uv.lock` 的业务依赖版本和 SHA256 校验保留，主机锁文件不改，模型 API 不受影响。正常网络保持默认 PyPI 配置。
