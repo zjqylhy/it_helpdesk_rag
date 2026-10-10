@@ -278,6 +278,16 @@ Go、Vue 生产镜像及 Python 3.12 RAG 镜像构建通过，PostgreSQL 17.11 +
 
 两个入口在 PowerShell 5.1.26100.9444 和 PowerShell 7.6.5 下均为零解析错误。使用 PowerShell 5.1 实际执行 Docker `Check`、`Status` 通过，四个现有容器均 healthy，中文提示正常。验证进程使用 `-ExecutionPolicy Bypass`，未修改系统执行策略；未重建容器或重跑模型评测。Windows 部署说明补充编辑脚本时保留 BOM 的要求。
 
+## 2026-10-10 Docker 知识文档补齐
+
+用户发现 Docker 知识库不完整。实际核对原生环境为 7 库、9 文档，Docker 仅有部署验证库的 1 份打印机文档。读取原生导入清单，先核对全部原文件 SHA256，再通过 Docker 上传 API 创建对应适用范围并导入 9 份材料；原生数据库和历史不改写，部署验证库保留。
+
+全部导入任务完成，版本已发布；下载原文件逐份 SHA256 一致，来源链接与原清单一致。实际数据库按活动版本核对：原资料 9 文档、649 切片，向量均为 1024 维；加上原部署验证库，Docker 合计 8 库、10 文档、721 切片。Windows 库为 3 文档、271 切片，其余各库 1 文档。学校、邮箱、Windows、两份差旅资料的适用范围和年份保留。
+
+无头 Edge 逐库验证全部 7 个原资料库及 9 份文档可见、已有可用版本，页面脚本异常为 0；新增上海交大 VPN 问答正确返回 jAccount 与自动开通说明，附该库原文引用。Windows 三文档页面截图已检查。私有清单与证据在 `data/docker-validation/knowledge-sync.json`、`knowledge-page-check.json`、`full-knowledge-answer.png`、`full-knowledge-windows.png`。
+
+本轮导入重新调用 Embedding，另有一次真实问答；没有重跑正式质量评测。新上传生成新的知识库、文档和版本 ID，原生冻结题目/清单不能直接用于 Docker；正式历史报告和原生会话保留原位。原先的备份恢复验证只覆盖首轮单文档数据，未将其声明为本次完整语料恢复验证。
+
 ## 复现工程联测
 
 先安装前端、RAG 和 tools 的依赖。在分别的终端启动以下服务：
