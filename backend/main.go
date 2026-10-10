@@ -130,6 +130,7 @@ func (a *app) routes() *gin.Engine {
 	api.GET("/auth/me", func(c *gin.Context) { c.JSON(200, c.MustGet("user")) })
 	api.GET("/knowledge-bases", a.listKB)
 	api.POST("/knowledge-bases", a.admin, a.createKB)
+	api.PATCH("/knowledge-bases/:id/default-search", a.admin, a.defaultSearch)
 	api.GET("/documents", a.listDocuments)
 	api.POST("/documents", a.admin, a.upload)
 	api.POST("/documents/:id/versions", a.admin, a.upload)
@@ -216,19 +217,40 @@ func (a *app) query(c *gin.Context, sql string, args ...any) {
 func (a *app) listKB(c *gin.Context) { a.query(c, `SELECT * FROM knowledge_bases ORDER BY name`) }
 func (a *app) createKB(c *gin.Context) {
 	var q struct {
-		Name         string `json:"name"`
-		Organization string `json:"organization"`
+		Name          string `json:"name"`
+		Organization  string `json:"organization"`
+		DefaultSearch *bool  `json:"default_search"`
 	}
 	if c.ShouldBindJSON(&q) != nil || strings.TrimSpace(q.Name) == "" || strings.TrimSpace(q.Organization) == "" {
 		fail(c, 400, "填写名称和适用组织")
 		return
 	}
 	uid := id()
-	if _, e := a.db.Exec(c, `INSERT INTO knowledge_bases(id,name,organization) VALUES($1,$2,$3)`, uid, q.Name, q.Organization); e != nil {
+	include := q.DefaultSearch == nil || *q.DefaultSearch
+	if _, e := a.db.Exec(c, `INSERT INTO knowledge_bases(id,name,organization,default_search) VALUES($1,$2,$3,$4)`, uid, q.Name, q.Organization, include); e != nil {
 		fail(c, 500, "创建失败")
 		return
 	}
 	c.JSON(201, gin.H{"id": uid})
+}
+func (a *app) defaultSearch(c *gin.Context) {
+	var q struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if c.ShouldBindJSON(&q) != nil || q.Enabled == nil {
+		fail(c, 400, "缺少默认问答设置")
+		return
+	}
+	result, e := a.db.Exec(c, `UPDATE knowledge_bases SET default_search=$2 WHERE id=$1`, c.Param("id"), *q.Enabled)
+	if e != nil {
+		fail(c, 500, "设置失败")
+		return
+	}
+	if result.RowsAffected() == 0 {
+		fail(c, 404, "知识库不存在")
+		return
+	}
+	c.Status(204)
 }
 func (a *app) listDocuments(c *gin.Context) {
 	a.query(c, `SELECT d.*, v.status AS active_status, j.id AS job_id,j.status AS job_status,j.progress,j.error,
@@ -424,29 +446,57 @@ func (a *app) listSessions(c *gin.Context) {
 	a.query(c, `SELECT * FROM sessions WHERE user_id=$1 ORDER BY created_at DESC`, c.MustGet("user").(user).ID)
 }
 func (a *app) createSession(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
 	var q struct {
-		KB string `json:"kb_id"`
+		KB  string   `json:"kb_id"`
+		KBs []string `json:"kb_ids"`
 	}
 	if c.ShouldBindJSON(&q) != nil {
-		fail(c, 400, "缺少知识库")
+		fail(c, 400, "知识范围格式无效")
 		return
 	}
+	selected, err := normalizeScope(q.KB, q.KBs)
+	if err != nil {
+		fail(c, 400, err.Error())
+		return
+	}
+	if len(selected) > 0 {
+		var count int
+		if a.db.QueryRow(c, `SELECT count(*) FROM knowledge_bases WHERE id=ANY($1::text[])`, selected).Scan(&count) != nil {
+			fail(c, 500, "知识范围读取失败")
+			return
+		}
+		if count != len(selected) {
+			fail(c, 400, "知识库不存在")
+			return
+		}
+	}
 	uid := id()
-	_, e := a.db.Exec(c, `INSERT INTO sessions(id,user_id,kb_id) VALUES($1,$2,$3)`, uid, c.MustGet("user").(user).ID, q.KB)
+	encoded, _ := json.Marshal(selected)
+	var single any
+	if len(selected) == 1 {
+		single = selected[0]
+	}
+	_, e := a.db.Exec(c, `INSERT INTO sessions(id,user_id,kb_id,kb_ids) VALUES($1,$2,$3,$4::jsonb)`, uid, c.MustGet("user").(user).ID, single, string(encoded))
 	if e != nil {
 		fail(c, 400, "知识库不存在")
 		return
 	}
 	c.JSON(201, gin.H{"id": uid})
 }
-func (a *app) owned(c *gin.Context, sid string) (string, bool) {
-	var kb string
-	e := a.db.QueryRow(c, `SELECT kb_id FROM sessions WHERE id=$1 AND user_id=$2`, sid, c.MustGet("user").(user).ID).Scan(&kb)
+func (a *app) owned(c *gin.Context, sid string) ([]string, bool) {
+	var encoded []byte
+	e := a.db.QueryRow(c, `SELECT CASE WHEN kb_id IS NOT NULL AND kb_ids='[]'::jsonb THEN jsonb_build_array(kb_id) ELSE kb_ids END FROM sessions WHERE id=$1 AND user_id=$2`, sid, c.MustGet("user").(user).ID).Scan(&encoded)
 	if e != nil {
 		fail(c, 404, "会话不存在")
-		return "", false
+		return nil, false
 	}
-	return kb, true
+	var selected []string
+	if json.Unmarshal(encoded, &selected) != nil {
+		fail(c, 500, "会话范围无效")
+		return nil, false
+	}
+	return selected, true
 }
 func (a *app) messages(c *gin.Context) {
 	if _, ok := a.owned(c, c.Param("id")); !ok {
@@ -466,7 +516,7 @@ func (a *app) chat(c *gin.Context) {
 		fail(c, 400, "问题或请求标识无效")
 		return
 	}
-	kb, ok := a.owned(c, q.Session)
+	kbs, ok := a.owned(c, q.Session)
 	if !ok {
 		return
 	}
@@ -492,19 +542,30 @@ func (a *app) chat(c *gin.Context) {
 	}()
 	_, _ = a.db.Exec(c, `UPDATE sessions SET title=$2 WHERE id=$1 AND title='新会话'`, q.Session, string([]rune(q.Question)[:min(30, len([]rune(q.Question)))]))
 	history := []map[string]string{}
-	rows, e := a.db.Query(c, `SELECT question,answer FROM (SELECT question,answer,created_at FROM messages WHERE session_id=$1 AND status='completed' ORDER BY created_at DESC LIMIT 4) h ORDER BY created_at`, q.Session)
+	rows, e := a.db.Query(c, `SELECT question,answer,status FROM (SELECT question,answer,status,created_at,id FROM messages WHERE session_id=$1 AND status IN ('completed','clarify') ORDER BY created_at DESC,id DESC LIMIT 4) h ORDER BY created_at,id`, q.Session)
 	if e != nil {
 		status = "error"
 		fail(c, 500, "历史读取失败")
 		return
 	}
 	for rows.Next() {
-		var question, ans string
-		_ = rows.Scan(&question, &ans)
-		history = append(history, map[string]string{"role": "user", "content": question}, map[string]string{"role": "assistant", "content": ans})
+		var question, ans, state string
+		if rows.Scan(&question, &ans, &state) != nil {
+			rows.Close()
+			status = "error"
+			fail(c, 500, "历史读取失败")
+			return
+		}
+		history = append(history, map[string]string{"role": "user", "content": question}, map[string]string{"role": "assistant", "content": ans, "status": state})
+	}
+	if rows.Err() != nil {
+		rows.Close()
+		status = "error"
+		fail(c, 500, "历史读取失败")
+		return
 	}
 	rows.Close()
-	body, _ := json.Marshal(gin.H{"kb_id": kb, "question": q.Question, "history": history, "request_id": q.Request})
+	body, _ := json.Marshal(gin.H{"kb_ids": kbs, "question": q.Question, "history": history, "request_id": q.Request})
 	req, e := http.NewRequestWithContext(c.Request.Context(), "POST", a.ragURL+"/internal/chat", bytes.NewReader(body))
 	if e != nil {
 		status = "error"

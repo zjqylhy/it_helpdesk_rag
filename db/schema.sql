@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS sessions (
  id text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id), kb_id text NOT NULL REFERENCES knowledge_bases(id),
  title text NOT NULL DEFAULT '新会话', created_at timestamptz NOT NULL DEFAULT now()
 );
+-- 增量扩展查询范围，旧单库会话仍通过 kb_id 读取，不覆盖历史数据。
+ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS default_search boolean NOT NULL DEFAULT true;
+ALTER TABLE sessions ALTER COLUMN kb_id DROP NOT NULL;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS kb_ids jsonb NOT NULL DEFAULT '[]';
 CREATE TABLE IF NOT EXISTS messages (
  id text PRIMARY KEY, session_id text NOT NULL REFERENCES sessions(id), request_id text NOT NULL,
  question text NOT NULL, answer text NOT NULL DEFAULT '', status text NOT NULL DEFAULT 'generating',

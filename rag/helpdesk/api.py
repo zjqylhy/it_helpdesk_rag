@@ -31,7 +31,8 @@ online_limit = asyncio.Semaphore(3)
 embedding_limit = asyncio.Semaphore(2)
 
 class Chat(BaseModel):
-    kb_id: str
+    kb_id: str | None = None
+    kb_ids: list[str] = Field(default_factory=list, max_length=32)
     question: str = Field(min_length=1, max_length=12000)
     history: list[dict[str,str]] = Field(default_factory=list, max_length=8)
     request_id: str
@@ -45,6 +46,10 @@ async def health():
 async def chat(body: Chat, x_internal_token: str = Header(default='')):
     if not hmac.compare_digest(x_internal_token, settings.internal_token):
         raise HTTPException(401)
+    if body.kb_id and body.kb_ids:
+        raise HTTPException(400, detail='知识范围重复')
+    if any(not value.strip() or len(value) > 128 for value in body.kb_ids):
+        raise HTTPException(400, detail='知识范围无效')
     async def stream():
         # 每请求独立用量，避免并发会话的 Token 统计混合。
         models = Models(settings)
@@ -53,7 +58,7 @@ async def chat(body: Chat, x_internal_token: str = Header(default='')):
         pipeline = Pipeline(store, models)
         pipeline.indices = indices
         try:
-            async for event, data in pipeline.events(body.kb_id, body.question, body.history):
+            async for event, data in pipeline.events(body.kb_id, body.question, body.history, kb_ids=body.kb_ids):
                 yield f'event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n'
         except (ProviderError, ValueError) as exc:
             yield f'event: error\ndata: {json.dumps({"error": str(exc)}, ensure_ascii=False)}\n\n'

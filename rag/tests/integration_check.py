@@ -1,11 +1,12 @@
 """对运行中的 Go/Python/SQL 服务进行工程集成验证，不调用付费模型。"""
 import asyncio
 import json
+import os
 import httpx
 from pathlib import Path
 
 async def main():
-    async with httpx.AsyncClient(base_url='http://127.0.0.1:8080/api/v1',timeout=30,trust_env=False) as client:
+    async with httpx.AsyncClient(base_url=os.getenv('TEST_API_URL', 'http://127.0.0.1:8080/api/v1'),timeout=30,trust_env=False) as client:
         login=await client.post('/auth/login',json={'username':'admin','password':'test-admin-password'});login.raise_for_status()
         admin={'Authorization':'Bearer '+login.json()['token']}
         login=await client.post('/auth/login',json={'username':'demo','password':'test-user-password'});login.raise_for_status()
