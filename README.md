@@ -6,6 +6,8 @@ Windows 可使用 Docker Desktop 部署完整应用，也可按 [Windows 原生�
 
 云上支持 Linux 单机 Docker Compose，共用应用代码，见 [云部署说明](docs/cloud.md)。
 
+第二阶段计划补齐跨库评测、工程验证、反馈业务闭环及用户组/文档权限。范围已确认，细化规格与技术方案待审核，尚未实现；见 [第二阶段需求](docs/spec-v2.md) 和 [第二阶段技术方案](docs/technical-plan-v2.md)。当前没有云资源，实际云部署另行验收。
+
 业务 API 使用 Go/Gin，RAG 与 Worker 使用 Python/FastAPI，前端使用 Vue 3，数据保存到 PostgreSQL/pgvector。中文 BM25 与向量检索经 RRF 融合后调用 Qwen 重排，DeepSeek 根据证据生成带来源的回答。
 
 ## 已实现
