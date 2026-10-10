@@ -74,15 +74,42 @@ foreach ($member in $evalIndex.members) {
 
 整体汇总按逐题记录及对应分母计算，不能平均各库的正确率；来源、数据集、代码和模型清单均须保留。30 题为开发集，可用于定位问题和调整提示；正式测试题须按事实主题独立划分。
 
-## 二百题测试候选审核
+## 二百题测试集审核与重放
 
 `eval/private/test-candidates-v1/` 保存 7 库候选、对应固定语料、整体清单及 `all-cases.jsonl`。`review.html` 可在本机浏览器打开，按知识库/场景筛选或搜索题目、必要事实和原文，展开后检查固定历史、标准、定位及原始来源；页面不自动发布或上传内容。`review.json` 提供同样内容的结构化版本。
 
-候选为单文档 100、多轮 30、同库多文档 30、无答案 25、条件/适用范围 15；预期行为分别为 answer 160、refuse 25、clarify 15。全部为 test/review 且审核记录为空，当前不可发布。来源段落、版本和快照已校验，另用开发题与候选合并文件检查跨划分主题；排除开发证据段落及已知的同事实重复表述。程序检查不能替代人工对语义重叠和无答案范围的审查。
+候选为单文档 100、多轮 30、同库多文档 30、无答案 25、条件/适用范围 15；预期行为分别为 answer 160、refuse 25、clarify 15。原候选包保留 test/review 状态。用户于 2026-10-10 确认题目和原文审核后，逐题写入审核记录，按库冻结为 `eval/private/releases/test-200-v1/`，200 题均为 active；整体 `index.json` 保存确认原话、审核包校验值和成员快照清单。来源段落、版本和快照已校验，另用开发题与候选合并文件检查跨划分主题；排除开发证据段落及已知的同事实重复表述。程序检查不能替代人工对语义重叠和无答案范围的审查。
 
 本套覆盖 140 个事实主题；多轮与组合场景共享部分测试侧事实，200 条题目不等于 200 个独立事实。正式报告需保留分库、分场景结果和事实依赖，避免仅看总体均值。只有 Windows 库含多个原文，30 条同库多文档候选因此都在该库。差旅题限定历史文件年份，不确认现行效力。
 
 用户审核问题及原文后，逐题执行 `review` 并按库冻结新发布版本；未审核题不得混入正式集。原文审核与实际答案裁决仍为两个节点。正式运行预算按批次和模式设置：默认 `--max-calls 200` 是 HTTP 请求上限，200 题不能理解成只需 200 次请求。
+
+本轮正式运行输出在 `reports/test-200-v1/`。四组检索共用每库同一份已持久化改写问题；四组端到端分别重放完整路径并辅助评分，仅 D 计算 Ragas 忠实度。每批独立记录 HTTP 请求数和 token 用量，按逐题记录计算总指标及知识库、场景分组指标。原文审核的“确认”不会自动转为实际答案的人工裁决；正式正确率在答案复核完成前保持 null。
+
+重放时从 `rag` 目录执行以下命令，另选新的输出根目录，保留本轮结果。请求预算按各库题数计算，包含重试；Ragas 异常、截断和执行失败必须保留在报告中。以下为顺序运行示例，调用真实 API 会产生费用：
+
+```powershell
+$testRoot = (Resolve-Path ../eval/private/releases/test-200-v1).Path
+$testIndex = Get-Content (Join-Path $testRoot index.json) -Raw | ConvertFrom-Json
+foreach ($member in $testIndex.members) {
+    $testCases = Join-Path $testRoot $member.cases
+    $testCorpus = Join-Path $testRoot $member.corpus
+    $retrievalBudget = $member.case_count * 6 + 30
+    uv run rag-eval run $testCases --corpus $testCorpus --split test --variant all --out "../reports/test-replay/retrieval/$($member.slug)" --max-calls $retrievalBudget
+    if ($LASTEXITCODE -ne 0) { throw "检索运行失败：$($member.slug)" }
+    foreach ($variant in @('D','A','B','C')) {
+        $answerBudget = $member.case_count * $(if ($variant -eq 'D') { 9 } else { 5 }) + 30
+        $faithfulnessOption = @()
+        if ($variant -eq 'D') { $faithfulnessOption = @('--ragas') }
+        uv run rag-eval run $testCases --corpus $testCorpus --split test --mode end-to-end --variant $variant --judge @faithfulnessOption --out "../reports/test-replay/end-to-end/$($member.slug)/$variant" --max-calls $answerBudget
+        if ($LASTEXITCODE -ne 0) { throw "问答运行失败：$($member.slug)/$variant" }
+    }
+}
+```
+
+跨库汇总先核对各成员清单与发布集，再合并逐题记录；不能直接平均各库指标。私有报告中的 `comparison-summary.json` 汇总八组结果，`human-review.html/json` 并列题目、标准、黄金出处、D 实际回答及 A/B/C 对照；人工裁决另存新报告，原始答案和自动评分不覆盖。
+
+`proposed-decisions.jsonl` 是依据事实/行为辅助评分生成的 200 条裁决草案，全部为 pending，未填写人工审核人，不直接导入 `adjudicate`。用户核对实际答案后确认草案或按题号修正，再生成包含审核人、理由、确认记录和审核包校验值的正式人工裁决。忠实度或引用语义分歧提示不自动等同于答案错误；本轮有 18 条事实/行为未通过、共 51 条带复核提示。
 
 ## 指标解释
 
