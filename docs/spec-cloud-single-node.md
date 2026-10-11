@@ -5,8 +5,8 @@
 - 用户确认先完成单机云部署与验收，并迁移当前本地 Docker 的知识库和历史记录。
 - 使用一台 Linux ECS，Go、RAG、Web 和 PostgreSQL/pgvector 由 Docker Compose 管理；宿主机 Caddy 提供 HTTPS。
 - 沿用业务代码、模型配置和权限行为，不引入 RDS、OSS 或多实例。
-- 截至 2026-10-11，用户尚无 ECS 和域名。地域、预算、SSH 连接和公网域名待提供；实际云部署未开始。
-- 需求范围与单机技术路线已确认；实际账号、地域和资源购买配置在创建付费资源前由用户确认。云端测试完成后仍须用户确认页面与问答结果。
+- 截至 2026-10-11，用户尚无 ECS 和域名，已确认中国内地部署、办理备案后公网开放。具体 ECS 地域、预算、SSH 连接和公网域名待提供；实际云部署未开始。
+- 需求范围、内地上线方式与单机技术路线已确认；实际账号、具体地域和资源购买配置在创建付费资源前由用户确认。云端测试完成后仍须用户确认页面与问答结果。
 
 操作命令沿用 [云部署说明](cloud.md)，本文件明确迁移顺序、验收标准和未完成项。
 
@@ -15,14 +15,25 @@
 初始容量估算为 x86_64、2 vCPU / 4 GiB 内存、60 GiB 云盘，Linux 建议 Ubuntu 24.04 LTS。该估算不是压测结论；首次部署观察内存、磁盘与问答延迟再调整。模型通过外部 API 调用，不需要 GPU。
 
 - ECS 具备 SSH 管理入口和访问模型 API、镜像仓库及依赖下载源的出网能力。
-- SSH 使用密钥，22 端口限定管理 IP；域名就绪后开放 80/443。
+- SSH 使用密钥，22 端口限定管理 IP；完成 ICP 备案、域名解析及入口配置后开放公网 Web 服务。
 - Web 保持宿主机 `127.0.0.1:3000`，数据库保持宿主机回环地址，Go/RAG 不发布宿主机端口。
 - 暂无域名时，通过 SSH 转发进行受控预验收，不把明文 HTTP 登录入口公开到公网。示例：`ssh -N -L 13000:127.0.0.1:3000 用户@ECS公网IP`，浏览器访问 `http://127.0.0.1:13000`。
 - SSH 预验收不能替代公网 HTTPS 验收。正式入口使用受控域名，配置解析、证书及 Caddy 开机启动。
-- 中国内地网站上线前完成适用的 ICP 备案；香港或海外节点的 ICP 要求不同。地域由用户确认。
+- 已确认使用中国内地节点，网站完成 ICP 备案后再对公网开放；备案期间通过 SSH 隧道预验收。
 - 在用户确认地域、计费方式与费用上限前，不购买实例、域名或其他云资源。
 
 参考：[ECS 创建说明](https://www.alibabacloud.com/help/en/ecs/quick-start)、[计费说明](https://help.aliyun.com/zh/ecs/pay-as-you-go-1)、[备案要求](https://help.aliyun.com/zh/icp-filing/basic-icp-service/user-guide/icp-filing-server-access-information-check)。
+
+## 中国内地资源准备与上线顺序
+
+1. 用户确认每月云资源预算上限，按服务器、云盘、带宽和域名统计；模型 API 单独计费。域名通常按年购买，服务器购买期限另行确认。
+2. 阿里云账号完成实名认证，注册符合备案要求的域名并完成域名实名认证；域名持有者信息与备案主体保持一致。身份材料由用户在阿里云官方页面提交，不保存到项目或聊天。
+3. ECS 选择中国内地节点、包年包月并购买公网带宽。2026-10-11 核对的官方可备案服务器表要求购买时长大于 3 个月（含续费累计）；免费试用或按量付费不能直接满足该要求。购买前以备案控制台的实例资格校验确认，不按短期试用方案下单。
+4. ECS 与域名优先使用同一个阿里云账号，便于备案时关联实例。具体地域及订单总价由用户确认后创建。
+5. ECS 建好后先部署、完整迁移及 SSH 预验收，同时按主体所在省市要求提交 ICP 备案。ECS 所在地域不替代备案主体所在省市规则。
+6. ICP 备案通过后，配置实际备案号展示、域名解析和 HTTPS，开放公网并执行公网验收。根据官方个人网站流程，网站开通后 30 日内办理公安联网备案；具体所需材料与展示信息以官方流程为准。
+
+参考：[个人网站备案流程](https://help.aliyun.com/zh/icp-filing/basic-icp-service/getting-started/quick-start-for-icp-filing-for-personal-websites)、[域名要求](https://help.aliyun.com/zh/icp-filing/basic-icp-service/user-guide/prepare-and-check-the-domain-name)、[可备案服务器要求](https://help.aliyun.com/zh/icp-filing/basic-icp-service/user-guide/icp-filing-server-access-information-check)。
 
 ## 发布与配置
 
