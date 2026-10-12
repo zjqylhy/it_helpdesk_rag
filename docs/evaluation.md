@@ -1,6 +1,6 @@
 # 评测集格式与维护
 
-跨库新入口与当前候选状态见本文末尾“独立跨库评测”和 [效果深度实施记录](effect-depth-implementation.md)。旧单库流程及历史成绩继续保留。
+跨库新入口与冻结状态见本文末尾“独立跨库评测”、[效果深度实施记录](effect-depth-implementation.md) 和 [冻结与预算记录](scope-40-release-and-budget.md)。旧单库流程及历史成绩继续保留。
 
 文件为 UTF-8 JSONL，每行一题。以下是格式示例，版本 ID 与 quote 需要替换成实际导出快照中的值；它不是可用黄金样本。
 
@@ -129,7 +129,7 @@ foreach ($member in $testIndex.members) {
 
 ## 独立跨库评测
 
-`scope-*` 命令使用独立 schema 与指定主体，复用在线授权后流水线。旧 `run --variant all` 仍是单库 A/B/C/D，不能用于证明跨库效果。当前 `eval/private/scope-candidates-v1/` 为 40 条待审核候选，不允许直接 `scope-run`；6 条权限协议在 `eval/fixtures/scope-permissions-v1.json`，与真实质量指标分开。
+`scope-*` 命令使用独立 schema 与指定主体，复用在线授权后流水线。旧 `run --variant all` 仍是单库 A/B/C/D，不能用于证明跨库效果。用户于 2026-10-13 审核 40 题及 6 条权限协议，已冻结 `eval/private/releases/scope-40-v1/`（10 开发、30 测试）。`scope-candidates-v1/` 保留审核前草稿，执行使用发布版本；付费预算待确认。6 条已审核权限协议在 `eval/fixtures/scope-permissions-v1.json`，与真实质量指标分开。
 
 以下命令从 rag 目录执行。首次准备时可在仓库根运行 `tools/effect-depth-prepare.py --out eval/private/NEW_DIRECTORY`，只复制本项目原生数据库到新副本，再迁移副本。不会升级当前原生业务库。副本环境文件包含凭据，不打印或提交。
 
@@ -140,7 +140,7 @@ $env:DATABASE_URL = $evalEnvironment.database_url
 python -m helpdesk.evaluation.cli scope-validate (Join-Path $evalRoot cases.jsonl) --corpus (Join-Path $evalRoot corpus.json)
 ```
 
-实际来源审核后才使用 `scope-review`。`--packet` 必须是人工已看过的 review.json，程序检查题目与审核包一致；审核者、确认原话必须真实填写。先导出新的 reviewed.jsonl，再 `scope-publish` 创建独立发布目录；旧目录不可覆盖。
+实际来源审核后才使用 `scope-review`。`--packet` 必须是人工已看过的 review.json，程序检查题目与审核包一致；审核者、确认原话必须真实填写。以下展示制作流程，scope-40-v1 已发布，不重复执行；新版本使用新目录与版本名。先导出新的 reviewed.jsonl，再 `scope-publish` 创建独立发布目录；旧目录不可覆盖。
 
 ```powershell
 if (-not $env:EVAL_REVIEWER -or -not $env:EVAL_SOURCE_CONFIRMATION) { throw '先填写实际审核人及确认原话' }
@@ -149,12 +149,16 @@ python -m helpdesk.evaluation.cli scope-review (Join-Path $evalRoot cases.jsonl)
 python -m helpdesk.evaluation.cli scope-publish (Join-Path $evalRoot reviewed.jsonl) --corpus (Join-Path $evalRoot corpus.json) --directory ../eval/private/releases --version scope-40-v1
 ```
 
-真实实验前另行确认 HTTP 预算和价格。本例不会自动设置付费上限；EVAL_HTTP_BUDGET 必须为已确认的正整数。价格表格式为 version、currency、rates，各 kind（llm/embedding/rerank）提供 total_per_million 或 input_per_million/output_per_million；需按清单实际模型路由核对价格与时间。缺少价格或用量时金额为 null，不能视为零费用。
+真实实验前另行确认 HTTP 预算和价格。本例不会自动设置付费上限；EVAL_HTTP_BUDGET 必须为已确认的正整数。当前开发方案拟用 150 次共享请求，含辅助评分，详见 [预算记录](scope-40-release-and-budget.md)。启动前核对三类模型均走网关、实际路由与价格版本及专用隧道；以下设置不会启动隧道。价格表格式为 version、currency、rates，各 kind（llm/embedding/rerank）提供 total_per_million 或 input_per_million/output_per_million；缺少价格或用量时金额为 null，不能视为零费用。
 
 ```powershell
 $httpBudget = [int]$env:EVAL_HTTP_BUDGET
 if ($httpBudget -lt 1) { throw '先设置已确认的 EVAL_HTTP_BUDGET' }
-python -m helpdesk.evaluation.cli scope-experiment ../eval/private/releases/scope-40-v1/cases.jsonl --corpus ../eval/private/releases/scope-40-v1/corpus.json --split dev --seed 12 --max-calls $httpBudget --out ../reports/scope-dev-paired-v1
+$env:CHAT_GATEWAY_ENABLED = 'true'
+$env:RETRIEVAL_GATEWAY_ENABLED = 'true'
+$env:LLM_MODEL = 'deepseek-flash'
+$env:MODEL_GATEWAY_CA_FILE = (Resolve-Path ../data/cloud-deploy-20261012/gateway-ca.pem).Path
+python -m helpdesk.evaluation.cli scope-experiment ../eval/private/releases/scope-40-v1/cases.jsonl --corpus ../eval/private/releases/scope-40-v1/corpus.json --split dev --seed 12 --max-calls $httpBudget --judge --prices ../eval/private/releases/scope-40-v1/prices-proposed.json --out ../reports/scope-dev-paired-v1
 ```
 
 `scope-experiment` 按 seed 逐题交错运行 baseline/split-v1，整个实验共用请求上限。输出 requests.jsonl 包含已发出请求，续跑从历史请求扣预算；清单不同则拒绝续跑。失败终态保留，未执行题为 pending。需要单策略运行可用 `scope-run --experiment baseline|split-v1 --max-calls ...`；其预算为该次命令上限，成对实验优先使用共享预算入口。

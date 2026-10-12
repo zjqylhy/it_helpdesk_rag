@@ -27,7 +27,7 @@ Windows 可使用 Docker Desktop 部署完整应用，也可按 [Windows 原生�
 
 以上质量成绩来自原 `qa-v2` 单库离线流程，不代表新增 `qa-v3-scope` 联合问答的效果；跨库增量已做工程回归和小样本真实验证，尚无独立跨库正式正确率。
 
-2026-10-13 优先补效果深度：八道多文档失败已完成阶段诊断，独立跨库冻结/评测、阶段观测、受控查询拆解和成对盲审工具已实现。40 条真实素材候选（10 开发、30 测试）及 6 条权限协议待人工审核；25 条与旧题共享来源段落，4 条条件辨析不代表真实矛盾覆盖。Python 82 项与独立 Go/Python/SQL 联测通过，外部付费模型调用为 0。候选未冻结、真实受控实验未运行，不报告新质量提升。见 [逐题分析](docs/multi-document-failure-analysis.md)、[当前需求](docs/spec-effect-depth.md) 和 [实施记录](docs/effect-depth-implementation.md)。
+2026-10-13 优先补效果深度：八道多文档失败已完成阶段诊断，独立跨库评测、阶段观测、受控查询拆解和成对盲审工具已实现。用户已验收代码/测试、审核 40 条真实素材题（10 开发、30 测试）及 6 条权限协议，发布独立冻结集 scope-40-v1。25 条与旧题共享来源段落，4 条条件辨析不代表真实矛盾覆盖。Python 82 项与独立 Go/Python/SQL 联测通过，外部付费模型调用为 0。真实开发实验预算待确认，不报告新质量提升。见 [逐题分析](docs/multi-document-failure-analysis.md)、[当前需求](docs/spec-effect-depth.md)、[实施记录](docs/effect-depth-implementation.md) 和 [冻结与预算](docs/scope-40-release-and-budget.md)。
 
 ## 问答范围与澄清
 
