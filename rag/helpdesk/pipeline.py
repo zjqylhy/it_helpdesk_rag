@@ -122,6 +122,8 @@ class Pipeline:
         if multi and variant != 'D':
             raise ValueError('联合问答仅支持混合检索加重排序；单库离线入口保留四组策略')
         trace = {'prompt_version': 'qa-v3-scope' if multi else PROMPT_VERSION, 'llm_model': self.models.s.llm_model, 'embedding_model': self.models.s.embedding_model, 'rerank_model': self.models.s.rerank_model, 'variant': variant, 'stages_ms': {}}
+        if hasattr(self.models.s, 'model_routes'):
+            trace['model_routes'] = self.models.s.model_routes()
         self.models.usage = []
         yield 'status', {'stage': 'retrieving', 'text': '正在检索知识库'}
         snapshot = await self.store.scope_snapshot(kb_ids or []) if multi else await self.store.snapshot(kb_id, snapshot_id)

@@ -32,6 +32,7 @@ async def run(settings, store, models, dataset_path, corpus_path, output, varian
                 'commit':git_commit(),'prompt':PROMPT_VERSION,'llm':settings.llm_model,
                 'embedding':settings.embedding_model,'dimension':settings.embedding_dimension,
                 'rerank':settings.rerank_model,'context_budget':settings.context_budget,
+                'model_routes':settings.model_routes(),
                 'queries_hash':sha(queries) if queries is not None else None, 'judge':judge_answers,'ragas':ragas,
                 'judge_prompt':JUDGE_VERSION if judge_answers else None}
     manifest['cases']=[{'id':c.id,'expected_behavior':c.expected_behavior} for c in cases]

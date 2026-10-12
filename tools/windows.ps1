@@ -10,7 +10,7 @@ $projectRoot = Split-Path $PSScriptRoot -Parent
 $env:PYTHONUTF8 = '1'
 
 # 当前桌面进程可能早于用户设置环境变量；只补入尚未继承的模型凭据。
-foreach ($keyName in @('DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'QWEN_API_KEY')) {
+foreach ($keyName in @('DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'QWEN_API_KEY', 'IT_HELPDESK_RAG_API_KEY')) {
     if (-not [Environment]::GetEnvironmentVariable($keyName, 'Process')) {
         $savedValue = [Environment]::GetEnvironmentVariable($keyName, 'User')
         if (-not $savedValue) { $savedValue = [Environment]::GetEnvironmentVariable($keyName, 'Machine') }

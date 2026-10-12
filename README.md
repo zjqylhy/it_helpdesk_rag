@@ -65,6 +65,8 @@ Stop 删除本项目容器但保留命名卷，再次 Start 可恢复数据。Do
 
 阿里 `DASHSCOPE_BASE_URL` 填带 `https://` 的业务空间主机根地址，不包含接口路径。Embedding 和 Rerank 路径由适配器追加；维度默认 1024。DeepSeek 默认非思考模式，模型名与已确认方案一致。
 
+统一网关模式将 `CHAT_GATEWAY_ENABLED`、`RETRIEVAL_GATEWAY_ENABLED` 设为 `true`，配置带 `/v1` 的 `MODEL_GATEWAY_BASE_URL` 和应用凭据 `IT_HELPDESK_RAG_API_KEY`。三类请求使用 `chat`、`embedding`、`rerank` 别名；Embedding 显式传 1024 维，Rerank 使用扁平参数。保留原 `EMBEDDING_MODEL`，避免与已有向量版本身份冲突。私有 CA 使用 `MODEL_GATEWAY_CA_FILE`，容器经宿主机隧道连接时可配置 `MODEL_GATEWAY_CONNECT_HOST`，仍校验证书和逻辑主机名。云端需挂载 CA 并配置 host-gateway；完整协议和云间隧道方案见[网关规格](docs/spec-model-gateway.md)。网关失败会报错，不回退厂商直连。
+
 原文件和数据库保存在 Docker 命名卷中。Python 服务和 Go API 未发布到主机端口，浏览器经 Web 的 `/api/` 代理访问。数据库端口只绑定本机，供本地评测 CLI 使用。
 
 2026-10-10 已在 Windows Docker Desktop 的 Linux 引擎实测：四服务健康、真实文件上传与问答引用、网页、容器重建持久化及独立数据库/文件备份恢复通过。首轮部署验证后，已通过上传 API 补齐原生环境的 9 份文档，保留原来的 7 个适用范围、649 个 1024 维切片；另保留部署验证库的 1 份打印机文档、72 个切片，合计 8 库、10 文档、721 切片。原生历史会话和冻结评测集未迁移；重新导入生成新 ID，不能直接复用原生冻结清单。容器内评测工具与 Ragas 适配器也已验证，实际云服务器与 HTTPS 仍待验收。详见 [验证记录](docs/verification.md)。

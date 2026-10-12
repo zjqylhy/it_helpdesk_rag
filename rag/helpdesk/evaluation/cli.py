@@ -86,6 +86,7 @@ async def execute(args):
             latest={r['id']:r for r in rows};manifest=read(Path(args.run)/'manifest.json');manifest['judge']=True
             # 复评不改写生成阶段版本，另记评委代码/提示与来源清单，保持可追溯。
             manifest.update(judge_commit=git_commit(),judge_prompt=JUDGE_VERSION,judge_llm=settings.llm_model,
+                            judge_model_routes=settings.model_routes(),
                             judge_source_manifest_hash=sha(read(Path(args.run)/'manifest.json')))
             expected=[x for x in cases.values() if x.split==manifest['split'] and x.status!='retired']
             if sha([x.model_dump() for x in expected])!=manifest['dataset_hash']:raise ValueError('评分数据集与原运行清单不一致')

@@ -16,12 +16,17 @@ services:
   backend:
     build: {context: ., dockerfile: backend/Dockerfile}
     restart: unless-stopped
-    env_file: .env
     environment:
       DATABASE_URL: postgresql://rag:${POSTGRES_PASSWORD}@db:5432/rag?sslmode=disable
       HTTP_ADDR: 0.0.0.0:8080
       RAG_URL: http://rag:8000
       UPLOAD_DIR: /data/uploads
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?请配置 INTERNAL_TOKEN}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请配置 ADMIN_PASSWORD}
+      USER_NAME: ${USER_NAME:-demo}
+      USER_PASSWORD: ${USER_PASSWORD:?请配置 USER_PASSWORD}
+      DB_SIMPLE_PROTOCOL: ${DB_SIMPLE_PROTOCOL:-false}
     volumes: ["uploads:/data/uploads"]
     depends_on:
       db: {condition: service_healthy}
@@ -44,6 +49,7 @@ services:
       DATABASE_URL: postgresql://rag:${POSTGRES_PASSWORD}@db:5432/rag?sslmode=disable
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-${QWEN_API_KEY:-}}
+      IT_HELPDESK_RAG_API_KEY: ${IT_HELPDESK_RAG_API_KEY:-}
     volumes: ["uploads:/data/uploads:ro"]
     depends_on:
       backend: {condition: service_healthy}

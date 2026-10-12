@@ -1,35 +1,32 @@
-# 聊天模型网关改造规格与技术方案
+# 三类模型统一网关规格与技术方案
 
-## 已确认需求
+## 已确认需求（2026-10-12）
 
-- 用户要求先仅迁移聊天应用；Embedding 与重排保持原有阿里接口与凭据。
-- 聊天入口为 `https://localhost:8443/v1/chat/completions`，本机 SSH 隧道转发至服务器网关。
-- 请求采用 Bearer 应用 Key、JSON 消息数组、模型别名 `chat` 和 `max_tokens`；覆盖结构化生成、在线流式回答及评测中的聊天调用。
-- Key 使用 `IT_HELPDESK_RAG_API_KEY`，已按用户授权保存到 Windows 用户环境变量。不写入 Git、前端、测试数据或文档。
-- 技术方案待用户确认；应用代码尚未修改。新分支为 `codex/model-gateway`。
+- 用户确认聊天、Embedding、Rerank 三个模型统一走网关，并提供应用 Key。此前仅迁移聊天的范围由本轮要求替代。
+- 逻辑基础地址 `https://localhost:9443/v1`。本机现有 SSH 隧道把 9443 转发至网关服务器 `47.113.231.252` 的回环 8443。
+- 所有模型请求使用 Bearer 应用 Key 与 JSON；应用只传路由别名和业务参数，厂商选择、模型名替换、厂商 Key 和上游协议组装由网关负责。
+- 聊天调用 `/chat/completions`、别名 `chat`，覆盖 JSON、SSE、多轮改写与评测。
+- Embedding 调用 `/embeddings`、别名 `embedding`，传字符串数组、`dimensions: 1024`、`encoding_format: float`；不传旧 DashScope 的嵌套参数。
+- Rerank 调用 `/rerank`、别名 `rerank`，扁平传 query、documents、top_n。应用已有原文，使用 `return_documents: false`，不重复请求文档。
+- 用户授权完整部署数据及模型凭据传输，也授权两台云服务器间建立专用 SSH 隧道：新建仅供转发的密钥、网关添加受限公钥、部署服务器配置隧道开机启动。私钥留在部署服务器，不复制本机管理私钥。
+- 需求与技术方案已人工确认；代码与测试结果须在发布修改版前交用户确认。
 
 ## 技术方案
 
-1. 新增明确的聊天网关配置开关、带 `/v1` 的网关基础地址及聊天模型别名。Key 只读取 `IT_HELPDESK_RAG_API_KEY`。网关模式缺少 Key 或请求失败时返回错误，不自动回退直连 DeepSeek。
-2. 将现有聊天 JSON 和流式请求统一绑定到选定的聊天客户端与路由；网关使用 `chat` 别名，保留结构化响应与流式终态校验。网关请求不默认携带厂商特有的 `thinking` 参数；通用 JSON、流式、用量参数须在实测中验证。
-3. Embedding 和重排使用原有客户端、模型及配置。现有向量、文档版本和知识快照无需重建，不因聊天别名修改 Embedding 模型身份。
-4. TLS 保持校验。Windows 原生模式使用系统可信证书；容器使用显式配置的可信 CA 文件。可配置网关连接主机，供 Docker 使用 `host.docker.internal` 访问宿主机隧道，同时保持逻辑地址 `localhost` 的 Host、TLS 服务器名和证书校验。
-5. Windows 原生与 Docker 启动脚本补入用户环境变量；Compose 只将网关 Key 注入 RAG。隧道与 CA 配置分别说明，不把 Key 写到 `.env.example` 或镜像。
-6. 诊断与模型探测按所选聊天模式检查凭据；评测清单记录网关路由和实际请求别名，不将网关别名声称为已确认的底层厂商模型。
-
-## 预检查结果（2026-10-11）
-
-- 已建立独立分支，Key 已保存，未输出值。
-- 按用户示例发送一次 `max_tokens=64` 的短聊天请求，得到 HTTP 401；只读模型列表同样得到 HTTP 401。实际接口鉴权尚未通过，需核对应用 Key 或网关鉴权配置。
-- Python 默认 certifi 验证失败；使用系统证书库时连接成功并收到 HTTP 401。未关闭证书校验。
-- 现有 RAG 容器到 `host.docker.internal:8443` 的 TCP 连接成功；容器内完整 TLS/鉴权尚未验证。
+1. `CHAT_GATEWAY_ENABLED` 和 `RETRIEVAL_GATEWAY_ENABLED` 显式控制模式，默认关闭以兼容现有环境。网关基础地址使用 `MODEL_GATEWAY_BASE_URL`；应用 Key 使用 `IT_HELPDESK_RAG_API_KEY`，仅注入 RAG，不进入源码、前端、测试数据或报告。
+2. 请求别名分别使用 `GATEWAY_CHAT_MODEL=chat`、`GATEWAY_EMBEDDING_MODEL=embedding`、`GATEWAY_RERANK_MODEL=rerank`。保留实际 `EMBEDDING_MODEL=qwen3.7-text-embedding` 与 1024 维，用于文档版本及旧向量兼容校验；路由别名不覆盖已存的模型身份。网关路由到其他 Embedding 模型时，须另行确认索引兼容性。
+3. 解析网关 Embedding 的 data 数组与 index，Rerank 的 results 数组；保留索引、数量、维度、有限数值和零向量检查。聊天保留 JSON 对象、SSE 完整终态和用量校验，网关模式不默认携带厂商 thinking 参数。
+4. 网关缺 Key 或请求失败时明确报错，不自动直连厂商。拒绝重定向；重试、并发和调用预算沿用现有行为。
+5. TLS 保持链和主机名验证。使用系统信任库，并支持 `MODEL_GATEWAY_CA_FILE` 增加可信 CA。当前 CA 从已验证的本机网关连接取得，不信任未经认证下载的证书。Docker 将公开 CA 只读挂载，`MODEL_GATEWAY_CONNECT_HOST=host.docker.internal` 仅改变连接地址，Host 与 TLS SNI 保持逻辑 localhost。
+6. 云端隧道由 systemd 管理，使用专用受限公钥；监听部署服务器的回环地址及 Docker 主机网关地址，避免公网监听。应用容器配置 host-gateway 映射，云端调用不依赖 Windows 本机在线。
+7. Windows 原生与 Docker 启动脚本补入应用 Key。诊断及探测按已选模式检查配置；评测清单和问答 trace 记录实际调用路由，别名不作为底层厂商型号的确认结论。
 
 ## 验证与交付
 
-- 契约测试：聊天 JSON 与 SSE 只请求网关路由、使用应用 Key 和 `chat`；网关失败不直连回退；Embedding/重排维持原协议。
-- 回归测试：Python 测试、配置检查、Windows PowerShell 5.1/7 脚本解析、Compose 静态校验。
-- 实际联调：修复 HTTP 401 后验证聊天 JSON、SSE 完整终态和用量，验证 Docker 的宿主机隧道及证书配置。
-- 页面验收：真实知识问答、引用、学校澄清承接和历史恢复；记录通过结果与仍待执行项。
-- 应用代码修改验证后提交，再由用户确认代码与测试结果。真实联调未通过时不宣称流量已经成功切换。
+- 契约测试覆盖三类路由、应用 Key、扁平参数、1024 维、批次对齐、非法输出、失败不回退、Host/SNI、JSON 和 SSE。
+- 执行 Python 回归测试、Windows 脚本解析、Compose 静态校验与镜像构建。
+- 本机及云端分别执行少量真实网关联调，记录 HTTP 调用次数和用量；不得输出凭据或原始请求内容。
+- 云端逐表逐文件校验完整恢复、清空目标旧登录令牌，再验证登录、历史、权限、上传及问答引用；完成容器重建、主机重启和独立恢复检查。
+- 用户确认代码与测试结果后发布；最后通过 SSH Web 隧道验收页面与回答。未完成公网域名和 HTTPS 时，不标记公网验收通过。
 
-参考：[HTTPX TLS](https://www.python-httpx.org/advanced/ssl/)、[Docker Desktop 网络](https://docs.docker.com/desktop/features/networking/)。
+参考：[HTTPX TLS](https://www.python-httpx.org/advanced/ssl/)、[HTTPCore SNI 扩展](https://www.encode.io/httpcore/extensions/#sni_hostname)。

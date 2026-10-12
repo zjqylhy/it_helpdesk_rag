@@ -14,7 +14,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw '未找到 
 if (-not (Test-Path -LiteralPath (Join-Path $projectRoot '.env'))) { throw '缺少 .env，请按 README 初始化账号及模型配置。' }
 
 # 补入桌面进程尚未继承的凭据，不输出或写入配置文件。
-foreach ($keyName in @('DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'QWEN_API_KEY')) {
+foreach ($keyName in @('DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'QWEN_API_KEY', 'IT_HELPDESK_RAG_API_KEY')) {
     if (-not [Environment]::GetEnvironmentVariable($keyName, 'Process')) {
         $savedValue = [Environment]::GetEnvironmentVariable($keyName, 'User')
         if (-not $savedValue) { $savedValue = [Environment]::GetEnvironmentVariable($keyName, 'Machine') }

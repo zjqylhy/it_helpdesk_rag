@@ -1,6 +1,7 @@
 import asyncio
 import json
 import math
+import ssl
 from collections.abc import AsyncIterator
 import httpx
 from .config import Settings
@@ -12,6 +13,13 @@ class Models:
     def __init__(self, settings: Settings, transport=None):
         self.s = settings
         self.http = httpx.AsyncClient(timeout=settings.model_timeout, transport=transport)
+        self.gateway_http = None
+        if settings.chat_gateway_enabled or settings.retrieval_gateway_enabled:
+            context = ssl.create_default_context()
+            if settings.model_gateway_ca_file:
+                context.load_verify_locations(cafile=settings.model_gateway_ca_file)
+            self.gateway_http = httpx.AsyncClient(timeout=settings.model_timeout, transport=transport,
+                                                 verify=context, trust_env=False, follow_redirects=False)
         self.online = asyncio.Semaphore(3)
         self.embeddings_limit = asyncio.Semaphore(2)
         self.usage: list[dict] = []
@@ -26,21 +34,38 @@ class Models:
 
     async def close(self):
         await self.http.aclose()
+        if self.gateway_http:
+            await self.gateway_http.aclose()
 
     def headers(self, kind):
-        key = self.s.deepseek_api_key if kind == 'llm' else self.s.dashscope_api_key
+        key = self.s.gateway_api_key if self.s.uses_gateway(kind) else self.s.deepseek_api_key if kind == 'llm' else self.s.dashscope_api_key
         if not key:
             raise ProviderError(f'{kind} API Key 未配置')
         return {'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}
 
+    def request_target(self, path, kind):
+        gateway = self.s.uses_gateway(kind)
+        base = self.s.model_gateway_base_url if gateway else self.s.deepseek_base_url if kind == 'llm' else self.s.dashscope_base_url
+        url = httpx.URL(base.rstrip('/') + path)
+        if (url.scheme != 'https' and not (url.scheme == 'http' and url.host in ('127.0.0.1', 'localhost'))
+                or url.username or url.password or url.query or url.fragment):
+            raise ProviderError('模型服务地址需配置 HTTPS 或本机 HTTP')
+        headers, extensions = self.headers(kind), {}
+        if gateway:
+            if url.scheme != 'https' or httpx.URL(base).path.rstrip('/') != '/v1':
+                raise ProviderError('网关地址需为带 /v1 的 HTTPS 地址')
+            if self.s.model_gateway_connect_host:
+                headers['Host'] = url.netloc.decode('ascii')
+                extensions['sni_hostname'] = url.host
+                url = url.copy_with(host=self.s.model_gateway_connect_host)
+        return self.gateway_http if gateway else self.http, url, headers, extensions
+
     async def post(self, path, body, kind):
-        base = self.s.deepseek_base_url if kind == 'llm' else self.s.dashscope_base_url
-        if not base.startswith(('https://', 'http://127.0.0.1', 'http://localhost')):
-            raise ProviderError('模型服务地址需配置 HTTPS')
+        client, url, headers, extensions = self.request_target(path, kind)
         for attempt in range(3):
             self.count_call()
             try:
-                response = await self.http.post(base.rstrip('/') + path, json=body, headers=self.headers(kind))
+                response = await client.post(url, json=body, headers=headers, extensions=extensions)
             except httpx.HTTPError:
                 raise ProviderError(f'{kind} 网络请求失败') from None
             if response.status_code in (429, 502, 503, 504) and attempt < 2:
@@ -48,16 +73,18 @@ class Models:
                 delay = min(float(retry), 10) if retry.replace('.', '', 1).isdigit() else 2 ** attempt
                 await asyncio.sleep(delay)
                 continue
-            if response.is_error:
+            if not response.is_success:
                 # 提供商原始错误可能包含请求内容，公共响应只输出分类和状态码。
                 raise ProviderError(f'{kind} HTTP {response.status_code}')
             try:
                 data = response.json()
             except ValueError:
                 raise ProviderError(f'{kind} 返回非 JSON') from None
+            if not isinstance(data, dict):
+                raise ProviderError(f'{kind} 返回格式无效')
             if data.get('code') or data.get('error'):
                 raise ProviderError(f'{kind} 业务错误')
-            if data.get('usage') is not None:
+            if isinstance(data.get('usage'), dict):
                 usage = {'kind': kind, **data['usage']}
                 self.usage.append(usage)
                 self.ledger.append(usage)
@@ -69,13 +96,23 @@ class Models:
         async with self.embeddings_limit:
             for start in range(0, len(texts), 20):
                 batch = texts[start:start + 20]
-                data = await self.post('/api/v1/services/embeddings/text-embedding/text-embedding', {
-                    'model': self.s.embedding_model, 'input': {'texts': batch},
-                    'parameters': {'text_type': text_type, 'dimension': self.s.embedding_dimension, 'output_type': 'dense'}}, 'embedding')
-                rows = data.get('output', {}).get('embeddings', [])
+                if self.s.retrieval_gateway_enabled:
+                    data = await self.post('/embeddings', {
+                        'model': self.s.gateway_embedding_model, 'input': batch,
+                        'dimensions': self.s.embedding_dimension, 'encoding_format': 'float'}, 'embedding')
+                    rows = data.get('data', [])
+                    index_key = 'index'
+                else:
+                    data = await self.post('/api/v1/services/embeddings/text-embedding/text-embedding', {
+                        'model': self.s.embedding_model, 'input': {'texts': batch},
+                        'parameters': {'text_type': text_type, 'dimension': self.s.embedding_dimension, 'output_type': 'dense'}}, 'embedding')
+                    rows = data.get('output', {}).get('embeddings', [])
+                    index_key = 'text_index'
+                if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                    raise ProviderError('Embedding 返回格式无效')
                 aligned = {}
                 for row in rows:
-                    index, vector = row.get('text_index'), row.get('embedding')
+                    index, vector = row.get(index_key), row.get('embedding')
                     if type(index) is not int or index in aligned or not 0 <= index < len(batch):
                         raise ProviderError('Embedding 索引无效')
                     if not isinstance(vector, list) or len(vector) != self.s.embedding_dimension or any(type(v) not in (int, float) or not math.isfinite(v) for v in vector):
@@ -91,10 +128,17 @@ class Models:
     async def rerank(self, query, documents, top_n=5):
         if not documents:
             return []
-        data = await self.post('/api/v1/services/rerank/text-rerank/text-rerank', {
-            'model': self.s.rerank_model, 'input': {'query': query, 'documents': documents},
-            'parameters': {'top_n': min(top_n, len(documents))}}, 'rerank')
-        rows = data.get('output', {}).get('results', [])
+        if self.s.retrieval_gateway_enabled:
+            data = await self.post('/rerank', {'model': self.s.gateway_rerank_model, 'query': query,
+                'documents': documents, 'top_n': min(top_n, len(documents)), 'return_documents': False}, 'rerank')
+            rows = data.get('results', [])
+        else:
+            data = await self.post('/api/v1/services/rerank/text-rerank/text-rerank', {
+                'model': self.s.rerank_model, 'input': {'query': query, 'documents': documents},
+                'parameters': {'top_n': min(top_n, len(documents))}}, 'rerank')
+            rows = data.get('output', {}).get('results', [])
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ProviderError('重排返回格式无效')
         seen = set()
         for row in rows:
             idx, score = row.get('index'), row.get('relevance_score')
@@ -106,8 +150,10 @@ class Models:
         return sorted(rows, key=lambda x: x['relevance_score'], reverse=True)
 
     def llm_body(self, messages, stream=False, structured=False):
-        body = {'model': self.s.llm_model, 'messages': messages, 'temperature': 0,
-                'thinking': {'type': 'disabled'}, 'stream': stream, 'max_tokens': 2048}
+        body = {'model': self.s.gateway_chat_model if self.s.chat_gateway_enabled else self.s.llm_model,
+                'messages': messages, 'temperature': 0, 'stream': stream, 'max_tokens': 2048}
+        if not self.s.chat_gateway_enabled:
+            body['thinking'] = {'type': 'disabled'}
         if structured:
             body['response_format'] = {'type': 'json_object'}
         if stream:
@@ -136,12 +182,13 @@ class Models:
 
     async def stream(self, messages) -> AsyncIterator[dict]:
         finished, saw_done = None, False
+        client, url, headers, extensions = self.request_target('/chat/completions', 'llm')
         async with self.online:
             self.count_call()
             try:
-                async with self.http.stream('POST', self.s.deepseek_base_url.rstrip('/') + '/chat/completions',
-                                            headers=self.headers('llm'), json=self.llm_body(messages, stream=True)) as response:
-                    if response.is_error:
+                async with client.stream('POST', url, headers=headers, extensions=extensions,
+                                         json=self.llm_body(messages, stream=True)) as response:
+                    if not response.is_success:
                         raise ProviderError(f'llm HTTP {response.status_code}')
                     async for line in response.aiter_lines():
                         if not line.startswith('data:'):
