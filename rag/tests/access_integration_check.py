@@ -38,6 +38,10 @@ async def main():
         assert (await client.get('/files/'+secret['version_id'],headers=user)).status_code==404
         assert (await client.get('/documents/'+secret['document_id']+'/versions',headers=user)).status_code==404
         assert kb not in {k['id'] for k in (await client.get('/knowledge-bases',headers=user)).json()}
+        denied=await client.post('/sessions',headers=user,json={'kb_ids':[kb]})
+        missing=await client.post('/sessions',headers=user,json={'kb_ids':['missing-library']})
+        assert denied.status_code == missing.status_code == 400
+        assert denied.json() == missing.json()
         async def grant(doc,groups=None):
             r=await client.put('/admin/documents/'+doc['document_id']+'/access',headers=admin,json={'visibility':'all_users' if groups is None else 'groups','group_ids':groups or []});r.raise_for_status()
         await grant(public)

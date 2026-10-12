@@ -36,9 +36,14 @@ def parser():
     x=sub.add_parser('adjudicate');x.add_argument('--run',required=True);x.add_argument('--decisions',required=True);x.add_argument('--out',required=True)
     x=sub.add_parser('compare');x.add_argument('left');x.add_argument('right');x.add_argument('--out',required=True)
     x=sub.add_parser('report');x.add_argument('directory')
+    from .scope_cli import register
+    register(sub)
     return p
 
 async def execute(args):
+    if args.command.startswith('scope-'):
+        from .scope_cli import execute as execute_scope
+        return await execute_scope(args)
     settings=Settings();store=Store(settings);models=Models(settings)
     models.max_calls = getattr(args,'max_calls',200)
     try:

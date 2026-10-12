@@ -26,11 +26,15 @@ class Models:
         self.ledger: list[dict] = []
         self.calls = 0
         self.max_calls = None
+        self.call_observer = None
 
-    def count_call(self):
+    def count_call(self, kind='llm'):
         if self.max_calls is not None and self.calls >= self.max_calls:
             raise ProviderError('模型调用预算已用完')
         self.calls += 1
+        if self.call_observer:
+            # 评测在发出请求前落盘；进程中断也不能把已发出的未知用量记为零。
+            self.call_observer({'event': 'started', 'sequence': self.calls, 'kind': kind})
 
     async def close(self):
         await self.http.aclose()
@@ -63,7 +67,7 @@ class Models:
     async def post(self, path, body, kind):
         client, url, headers, extensions = self.request_target(path, kind)
         for attempt in range(3):
-            self.count_call()
+            self.count_call(kind)
             try:
                 response = await client.post(url, json=body, headers=headers, extensions=extensions)
             except httpx.HTTPError:

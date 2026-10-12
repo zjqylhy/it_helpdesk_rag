@@ -1,0 +1,50 @@
+{
+  "version": "scope-permissions-v1",
+  "kind": "synthetic_security_fixture",
+  "human_review_status": "pending",
+  "quality_denominator": "separate_from_real_knowledge_cases",
+  "cases": [
+    {
+      "id": "acl-cross-library-visible",
+      "scenario": "跨库可见性",
+      "setup": "普通用户无组授权；一个库有公开文档，另一个库仅有受限文档",
+      "expected": "隐藏受限库名、组织、原文及引用，不传入模型",
+      "checks": ["tests/test_access.py::test_scope_removes_invisible_metadata_and_splits_cache", "tests.access_integration_check"]
+    },
+    {
+      "id": "acl-same-library-documents",
+      "scenario": "同库文档差异",
+      "setup": "同库含公开文档和组限定文档；请求者不在组中",
+      "expected": "BM25、向量、模型上下文、引用和下载仅有公开版本",
+      "checks": ["tests/test_access.py::test_vector_and_corpus_are_filtered_before_access", "tests.access_integration_check"]
+    },
+    {
+      "id": "acl-default-scope",
+      "scenario": "默认范围",
+      "setup": "默认业务范围中有不可读库，另有关闭default_search的验证库",
+      "expected": "默认查询和组织澄清只列出可见、纳入默认范围的库",
+      "checks": ["tests.scope_integration_check", "tests/test_access.py::test_scope_removes_invisible_metadata_and_splits_cache"]
+    },
+    {
+      "id": "acl-explicit-denied-scope",
+      "scenario": "指定未授权范围",
+      "setup": "使用无组权限用户指定受限库ID，并猜测受限版本ID",
+      "expected": "会话请求400且与不存在ID响应一致；受限文件404，不透露库与文档内容",
+      "checks": ["tests.access_integration_check"]
+    },
+    {
+      "id": "acl-history-revoked",
+      "scenario": "历史撤权",
+      "setup": "加入组后生成回答，再移出组并读取历史和追问",
+      "expected": "旧回答、引用、trace整体遮蔽，追问不携带受限旧答案",
+      "checks": ["tests.access_integration_check"]
+    },
+    {
+      "id": "acl-in-flight-revoked",
+      "scenario": "在途撤权",
+      "setup": "慢速生成开始后撤销组授权",
+      "expected": "撤销确认后停止后续输出，不产生completed终态，不遗留generating消息",
+      "checks": ["tests.access_integration_check"]
+    }
+  ]
+}

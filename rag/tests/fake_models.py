@@ -31,7 +31,10 @@ async def completion(request: Request):
     body=await request.json();system=body['messages'][0]['content'];payload=json.loads(body['messages'][-1]['content'])
     recorded_requests.append(body)
     if not body.get('stream'):
-        if 'available_knowledge_bases' in payload:
+        if '将复合问题拆' in system:
+            query = payload['question']; middle = max(1, len(query) // 2)
+            result = {'subqueries': [query[:middle], query[middle:]]}
+        elif 'available_knowledge_bases' in payload:
             available = payload['available_knowledge_bases']
             question = payload['question']
             vpn = [b for b in available if 'VPN' in b['name']]

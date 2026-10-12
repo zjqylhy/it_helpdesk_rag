@@ -71,6 +71,7 @@ jobs:
           uv run python -m tests.integration_check
           uv run python -m tests.evaluation_check
           uv run python -m tests.scope_integration_check
+          EFFECT_CHECK_ROOT=../data uv run python -m tests.scope_evaluation_check
           uv run python -m tests.access_integration_check
   compose-smoke:
     runs-on: ubuntu-latest

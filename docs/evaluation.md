@@ -1,5 +1,7 @@
 # 评测集格式与维护
 
+跨库新入口与当前候选状态见本文末尾“独立跨库评测”和 [效果深度实施记录](effect-depth-implementation.md)。旧单库流程及历史成绩继续保留。
+
 文件为 UTF-8 JSONL，每行一题。以下是格式示例，版本 ID 与 quote 需要替换成实际导出快照中的值；它不是可用黄金样本。
 
 ```json
@@ -123,3 +125,42 @@ foreach ($member in $testIndex.members) {
 - refused 与 clarify 分别评价；全部拒答不会提高可回答题正确率。
 - CLI 服务端 TTFT 与页面发送到渲染首字的 TTFT 分别记录，测试替身耗时不代表真实模型耗时。
 - 引用编号合法性只证明引用属于本次证据，语义支持需要逐事实评委和人工核对。
+
+
+## 独立跨库评测
+
+`scope-*` 命令使用独立 schema 与指定主体，复用在线授权后流水线。旧 `run --variant all` 仍是单库 A/B/C/D，不能用于证明跨库效果。当前 `eval/private/scope-candidates-v1/` 为 40 条待审核候选，不允许直接 `scope-run`；6 条权限协议在 `eval/fixtures/scope-permissions-v1.json`，与真实质量指标分开。
+
+以下命令从 rag 目录执行。首次准备时可在仓库根运行 `tools/effect-depth-prepare.py --out eval/private/NEW_DIRECTORY`，只复制本项目原生数据库到新副本，再迁移副本。不会升级当前原生业务库。副本环境文件包含凭据，不打印或提交。
+
+```powershell
+$evalRoot = (Resolve-Path ../eval/private/scope-candidates-v1).Path
+$evalEnvironment = Get-Content (Join-Path $evalRoot environment.json) -Raw | ConvertFrom-Json
+$env:DATABASE_URL = $evalEnvironment.database_url
+python -m helpdesk.evaluation.cli scope-validate (Join-Path $evalRoot cases.jsonl) --corpus (Join-Path $evalRoot corpus.json)
+```
+
+实际来源审核后才使用 `scope-review`。`--packet` 必须是人工已看过的 review.json，程序检查题目与审核包一致；审核者、确认原话必须真实填写。先导出新的 reviewed.jsonl，再 `scope-publish` 创建独立发布目录；旧目录不可覆盖。
+
+```powershell
+if (-not $env:EVAL_REVIEWER -or -not $env:EVAL_SOURCE_CONFIRMATION) { throw '先填写实际审核人及确认原话' }
+$evalIds = ((Get-Content (Join-Path $evalRoot cases.jsonl) | ForEach-Object { ($_ | ConvertFrom-Json).id }) -join ',')
+python -m helpdesk.evaluation.cli scope-review (Join-Path $evalRoot cases.jsonl) --ids $evalIds --reviewer $env:EVAL_REVIEWER --confirmation $env:EVAL_SOURCE_CONFIRMATION --packet (Join-Path $evalRoot review-final/review.json) --out (Join-Path $evalRoot reviewed.jsonl)
+python -m helpdesk.evaluation.cli scope-publish (Join-Path $evalRoot reviewed.jsonl) --corpus (Join-Path $evalRoot corpus.json) --directory ../eval/private/releases --version scope-40-v1
+```
+
+真实实验前另行确认 HTTP 预算和价格。本例不会自动设置付费上限；EVAL_HTTP_BUDGET 必须为已确认的正整数。价格表格式为 version、currency、rates，各 kind（llm/embedding/rerank）提供 total_per_million 或 input_per_million/output_per_million；需按清单实际模型路由核对价格与时间。缺少价格或用量时金额为 null，不能视为零费用。
+
+```powershell
+$httpBudget = [int]$env:EVAL_HTTP_BUDGET
+if ($httpBudget -lt 1) { throw '先设置已确认的 EVAL_HTTP_BUDGET' }
+python -m helpdesk.evaluation.cli scope-experiment ../eval/private/releases/scope-40-v1/cases.jsonl --corpus ../eval/private/releases/scope-40-v1/corpus.json --split dev --seed 12 --max-calls $httpBudget --out ../reports/scope-dev-paired-v1
+```
+
+`scope-experiment` 按 seed 逐题交错运行 baseline/split-v1，整个实验共用请求上限。输出 requests.jsonl 包含已发出请求，续跑从历史请求扣预算；清单不同则拒绝续跑。失败终态保留，未执行题为 pending。需要单策略运行可用 `scope-run --experiment baseline|split-v1 --max-calls ...`；其预算为该次命令上限，成对实验优先使用共享预算入口。
+
+开发结论锁定后才在 test 划分运行正式对比。`scope-pair-packet` 绑定两组完整答案，按 seed 随机左右位置，策略映射单独写 blind-key.json；人工审核期间不打开该映射。`scope-adjudicate` 读取原数据、语料、run 和 decisions，创建新目录，不覆盖原答案或辅助评分。两组全量人工裁决后才允许 `scope-compare`。
+
+阶段/行为/延迟/费用分别保存于 scope-summary.json 和 scope-segments.json。问答耗时采用 Pipeline 的服务端 total_ms/首字，与辅助评委耗时分开；状态失败和拒答保留分母，未知阶段另列 observed。固定历史重放单独标记，真实 Web 会话链不混入该成绩。
+
+只读重算旧题可使用 `scope-diagnose DATASET --corpus CORPUS --run RUN --legacy --out NEW_JSON`。旧 trace 未保存的重排序列标为 null，不反推成新数据。权限协议、候选题及实际答案裁决分别保留人工确认节点。
