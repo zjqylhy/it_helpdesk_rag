@@ -1,0 +1,18 @@
+flowchart TB
+  U[用户和管理员] --> V[已有 Vue 问答 知识管理 权限页面]
+  V --> W[已有 Nginx 静态资源与 API 代理]
+  W --> G[已有 Go Gin 业务 API]
+  G --> GD[(已有 PostgreSQL 业务与授权数据)]
+  G --> F[(已有原文件卷 Go 可写)]
+  G -->|内部 POST SSE| P[已有 Python FastAPI 问答入口]
+  P --> ACL[已有 AuthorizedStore 与普通 Pipeline]
+  ACL --> GD
+  ACL --> M[已有模型适配器]
+  M --> X[配置的聊天 Embedding Rerank 端点]
+  P --> WK[同一 Python 服务生命周期启动的 Worker]
+  WK -->|只读文件| F
+  WK -->|任务租约 切片 原子发布| GD
+  WK --> M
+  E[已有离线评测 CLI] -->|进程内调用| ACL
+  E -->|冻结成员与授权核验| GD
+  E --> R[(已有私有数据集 账本 报告 盲审包)]

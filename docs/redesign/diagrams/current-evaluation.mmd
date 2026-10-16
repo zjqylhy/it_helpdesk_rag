@@ -1,0 +1,7 @@
+flowchart LR
+  A[真实出处 必要事实 黄金锚点] --> B[人工审核 冻结题目语料与授权]
+  B --> C[FrozenScopeStore 拒绝漂移]
+  C --> D[seed固定 baseline与split-v1逐题交错]
+  D --> E[发出前记账 候选trace 问答计时]
+  E --> F[辅助评分另记成本 隐藏策略成对盲审]
+  F --> G[人工裁决 成对改善退步与分层报告]

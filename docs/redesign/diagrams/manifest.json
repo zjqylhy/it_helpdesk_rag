@@ -1,0 +1,86 @@
+{
+  "schema": "redesign-diagrams-v1",
+  "date": "2026-10-17",
+  "current_source_revision": "ae16c6c43f0f1b698676d02a15ad0a34bfbec178",
+  "current_diagrams": 5,
+  "target_diagrams": 2,
+  "mermaid_cli": "12.0.0",
+  "renderer": "Microsoft Edge headless",
+  "files": [
+    {
+      "path": "current-architecture.mmd",
+      "sha256": "e3a52f27cba0b7045302007e1fb0daaba8d84f0fd7e8824a7e93d2390c4ffdeb",
+      "bytes": 801
+    },
+    {
+      "path": "current-architecture.svg",
+      "sha256": "33e1920048b1007324cf0cc04c5f5ba87512584033c6a2071f44b285cd7fab7e",
+      "bytes": 34899
+    },
+    {
+      "path": "current-authorization.mmd",
+      "sha256": "d0bc3d8d6831216ea087294ac7afac8156e4fabee560ed565736cd5a648e34e4",
+      "bytes": 358
+    },
+    {
+      "path": "current-authorization.svg",
+      "sha256": "242ec98b885b36071928e329b81bec46b16ab5bb1b70e8afa44120450d1d2a27",
+      "bytes": 15428
+    },
+    {
+      "path": "current-chat.mmd",
+      "sha256": "f08267e9ec083c4e8b4a1e8b7c57028979bef6ea1223b333ac87ea3f353f796c",
+      "bytes": 1070
+    },
+    {
+      "path": "current-chat.svg",
+      "sha256": "79cc26addb21ae2a68d367ccf2a3f9322ed8e465a6fd875b65952815f8156022",
+      "bytes": 35603
+    },
+    {
+      "path": "current-evaluation.mmd",
+      "sha256": "6912c60eb3268467e461606561b35792350d1c574d2e9bd2d66553678500a7b1",
+      "bytes": 378
+    },
+    {
+      "path": "current-evaluation.svg",
+      "sha256": "c5555a5512f0a950452bc6a200c50c1873c77888181de739b71ce11aff88524c",
+      "bytes": 15632
+    },
+    {
+      "path": "current-ingestion.mmd",
+      "sha256": "44e2e48e027a91a40cf6acf246c7075a9820acfb76bf853bf3f748884f328074",
+      "bytes": 677
+    },
+    {
+      "path": "current-ingestion.svg",
+      "sha256": "ba88b003fc4d5a028e7c69a6bde26ec905c802d5163b2ae5aa87b5f2ae2a76fd",
+      "bytes": 23195
+    },
+    {
+      "path": "index.html",
+      "sha256": "2ac2109d1811674b741342057bb94ba9816676a9bd89f5e6bdc900d284b7f463",
+      "bytes": 270898
+    },
+    {
+      "path": "target-architecture.mmd",
+      "sha256": "1681ecf483997e04ac411180fe051ecf34cb9da840bdadd2aeb8127cc5cf740e",
+      "bytes": 1013
+    },
+    {
+      "path": "target-architecture.svg",
+      "sha256": "b683ce59744d0d3667a8998e373a2fe0fc954e7a1a6dfb65a9f38f1c57e8f647",
+      "bytes": 35404
+    },
+    {
+      "path": "target-workflow.mmd",
+      "sha256": "4877de59f4b60694e12ee7108a96777dec56fc59ee612267b1b11d76886b40ca",
+      "bytes": 1931
+    },
+    {
+      "path": "target-workflow.svg",
+      "sha256": "e5e7d5dc80caab0063db1e1206f7c547741bc2df84ff0d00e510ac2bdb7b504b",
+      "bytes": 80991
+    }
+  ]
+}

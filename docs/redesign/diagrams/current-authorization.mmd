@@ -1,0 +1,7 @@
+flowchart LR
+  A[管理员变更用户 组 文档授权] --> B[Go 独占策略锁]
+  B --> C[同事务更新授权 revision 审计]
+  C --> D[取消所有旧在途请求后返回成功]
+  D --> E[后续输出检查新 revision 停止旧流]
+  E --> F[历史读取按 provenance 重验]
+  F --> G[失权则遮蔽整段答案 引用 trace 自动来源]
