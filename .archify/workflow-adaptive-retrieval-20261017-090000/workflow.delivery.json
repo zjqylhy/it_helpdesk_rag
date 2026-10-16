@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "53475cf9-1cb6-4fa5-bf2f-3abf3aab19ef",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "C:\\Users\\LHY95\\Documents\\Codex\\it_helpdesk_rag\\.archify\\workflow-adaptive-retrieval-20261017-090000\\candidate.json",
+  "output": "C:\\Users\\LHY95\\Documents\\Codex\\it_helpdesk_rag\\.archify\\workflow-adaptive-retrieval-20261017-090000\\workflow.html",
+  "specification": {
+    "sha256": "60a7913292424ef9244cf304c4d0ce1ef95ebb58f2d6bfdcaba0c7e35fb7e5b3",
+    "bytes": 4408
+  },
+  "artifact": {
+    "sha256": "b0dbb7b237ef98d82bc876f35265edb96960b09e65f904f3b2a6110b3f8e9c78",
+    "bytes": 766207
+  }
+}

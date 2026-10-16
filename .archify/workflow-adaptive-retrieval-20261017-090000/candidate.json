@@ -1,0 +1,40 @@
+{
+  "schema_version":2,
+  "diagram_type":"workflow",
+  "meta":{"title":"自适应检索目标流程 待实现部分按阶段开启","locale":"zh-CN","quality_profile":"showcase","output":".archify/workflow-adaptive-retrieval-20261017-090000/workflow.html"},
+  "lanes":[{"id":"main","label":"明确范围到最终回答"},{"id":"conditional","label":"条件补查与有限降级","variant":"exception"},{"id":"terminal","label":"明确停止","variant":"exception"}],
+  "mainPath":["scope","query","search","coverage","draft","output"],
+  "nodes":[
+    {"id":"scope","lane":"main","col":0,"type":"security","label":"范围与权限","sublabel":"先确认组织与条件","tag":"已有","width":150},
+    {"id":"query","lane":"main","col":1,"type":"backend","label":"锁定查询方案","sublabel":"baseline 或 split-v1","tag":"已有 待效果闭环","width":150},
+    {"id":"search","lane":"main","col":2,"type":"database","label":"首检与原选择","sublabel":"40 候选 Top-5","tag":"已有","width":150},
+    {"id":"coverage","lane":"main","col":3,"type":"backend","label":"逐任务覆盖","sublabel":"缺失项与证据 ID","tag":"待 B2","width":150},
+    {"id":"draft","lane":"main","col":4,"type":"backend","label":"草稿与依据检查","sublabel":"检查 ≤2 修正 ≤1","tag":"待 B3 缓存正文","width":150},
+    {"id":"output","lane":"main","col":5,"type":"frontend","label":"最终正文与引用","sublabel":"发送前复核权限","tag":"完整或部分完成","width":150},
+    {"id":"clarify","lane":"conditional","col":0,"type":"security","label":"先澄清再停止","sublabel":"不猜学校或组织","tag":"沿用已有行为","width":150},
+    {"id":"partial","lane":"conditional","col":2,"type":"backend","label":"限定可答范围","sublabel":"保留有据独立任务","tag":"待 B2","width":150},
+    {"id":"supplement","lane":"conditional","col":3,"type":"backend","label":"一次补查与复查","sublabel":"仅缺项 同范围同权限","tag":"待 B2 查询 ≤2","width":150},
+    {"id":"failed","lane":"conditional","col":5,"type":"security","label":"检查失败终止","sublabel":"不发送未通过草稿","tag":"拒答或 error","width":150},
+    {"id":"refuse","lane":"terminal","col":2,"type":"security","label":"证据不足拒答","sublabel":"无可独立回答内容","tag":"明确停止","width":150}
+  ],
+  "edges":[
+    {"id":"scope-query","from":"scope","to":"query"},
+    {"id":"query-search","from":"query","to":"search"},
+    {"id":"search-coverage","from":"search","to":"coverage"},
+    {"id":"coverage-draft","from":"coverage","to":"draft","label":"证据完整"},
+    {"id":"draft-output","from":"draft","to":"output","label":"检查通过"},
+    {"id":"scope-clarify","from":"scope","to":"clarify","label":"条件歧义","role":"branch","variant":"security"},
+    {"id":"coverage-supplement","from":"coverage","to":"supplement","label":"缺召回且预算足","role":"branch","variant":"dashed"},
+    {"id":"supplement-draft","from":"supplement","to":"draft","label":"复查完整","role":"branch","variant":"dashed"},
+    {"id":"supplement-partial","from":"supplement","to":"partial","label":"仍缺证据","role":"branch"},
+    {"id":"coverage-partial","from":"coverage","to":"partial","label":"不可补查","role":"branch","fromSide":"bottom","toSide":"top"},
+    {"id":"partial-draft","from":"partial","to":"draft","label":"有据部分","role":"branch","variant":"dashed","fromSide":"bottom","toSide":"bottom"},
+    {"id":"partial-refuse","from":"partial","to":"refuse","label":"无可答项","role":"error","variant":"security"},
+    {"id":"draft-failed","from":"draft","to":"failed","label":"复核仍失败","role":"error","variant":"security"}
+  ],
+  "cards":[
+    {"dot":"amber","title":"覆盖判断","items":["先查最终上下文；缺项再诊断融合候选，最多一次。","候选有据但选择丢失，记录 selection_loss，证据分配另做实验。"]},
+    {"dot":"rose","title":"停止约束","items":["补查后复查包含在一次补查节点中，不返回首检形成循环。","所有阶段受总调用、Token、deadline、取消和撤权约束；未知检查不得视为通过。"]},
+    {"dot":"cyan","title":"分阶段开启","items":["B0/B1 保留现有流程；B2 加覆盖与补查；B3 独立评估回答检查。","B3 先缓存草稿再检查；修正一次后复核，失败不输出草稿。"]}
+  ]
+}

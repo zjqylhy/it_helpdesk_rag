@@ -1,0 +1,4 @@
+# 图表校验绑定原始字节，避免 Windows 换行转换破坏 SHA256。
+.archify/** -text
+# 保留生成器输出中的空白，避免手工修改已验证 HTML。
+.archify/**/*.html whitespace=-blank-at-eol
