@@ -6,7 +6,7 @@
 
 | 对象 | 必需字段或约束 |
 | --- | --- |
-| Principal | user_id、role、disabled、usage_kind；只来自可信 Go 鉴权与数据库，不能信任浏览器透传 |
+| Principal | user_id、role、disabled、usage_kind；只来自可信 Python Identity 用例与数据库，不能信任浏览器透传 |
 | AuthorizedScope | 请求的 all/selected 范围、实际 kb_ids、snapshot_members、authorized_version_ids、authorization_revision、scope_hash |
 | QueryPlan | 原问题、独立 query、组织/年份条件、tasks、实际 retrieval_queries、query_strategy、prompt_hash |
 | Task | task_id、原问题要求、组织/条件、必须回答项；最多两个独立任务，不能将模型臆造要求纳入 |
@@ -67,15 +67,17 @@ v1 行为先形成黑盒契约：包括已有字段大小写、日期、空数�
 
 同 request_id 再次提交不触发第二次模型生成；活动中的同会话新请求返回冲突。新实现不把网络重连解释为可恢复的模型流，客户端明确刷新历史或发起新请求。
 
-## 5 内部请求
+## 5 进程内问答契约
 
-Go → Python 内部问答请求包含：schema_version、request_id、message_id、principal_id、authorization_revision、requested_scope、question、过滤后的 history、server_strategy_id、deadline。内部令牌验证、网络隔离和数据库授权重算共同生效，浏览器不能调用可信内网接口。
+FastAPI 适配层完成身份解析后调用 Chat 用例；用例通过类型化 `ChatRunInput` 调用同进程 LangGraph。输入包含 schema_version、request_id、message_id、可信 Principal、authorization_revision、requested_scope、question、过滤后的 history、server_strategy_id、deadline。浏览器只提供第 4 节允许的字段，不能指定可信主体、授权版本、运行策略或预算。
 
-Python 不接受 Go 发来的“可读文档清单”作为唯一授权事实，仍在数据库重算并绑定版本；文档发布快照不可变，权限实时核验。所有模型请求经过新的 ModelPort/Budget 适配器，图节点不得自行发裸 HTTP 绕过计量和授权。
+不再提供 Go→Python 内部 HTTP/SSE 接口，也不沿用该接口的内部令牌。身份认证、SQL 授权和模型前校验全部保留；统一语言不等于信任调用方传入的文档 ID。AuthorizedCorpus 在数据库重算范围并绑定版本；文档发布快照不可变，权限实时核验。
+
+图节点经 EventSink 输出白名单事件，由 Chat/SSE 适配层统一编号并持久化最终公开结果。所有模型请求经过新的 ModelPort/Budget 适配器，节点不得自行发裸 HTTP 绕过计量和授权。Python API 与 Worker 不通过 HTTP 调用彼此；任务通过数据库租约与不可变版本协作。
 
 ## 6 SSE 协议与终态
 
-保留 `status / evidence / answer_delta / citations / refusal / done / error` 事件，Go 统一增加 request_id、message_id、递增 seq。UTF-8、CRLF、跨网络包与多行 data 的协议解析有独立夹具；只实现本项目明确协议，不宣称覆盖整个 SSE 标准。
+保留 `status / evidence / answer_delta / citations / refusal / done / error` 事件，Python Chat/SSE 适配层统一增加 request_id、message_id、递增 seq。UTF-8、CRLF、跨网络包与多行 data 的协议解析有独立夹具；只实现本项目明确协议，不宣称覆盖整个 SSE 标准。
 
 | 事件 | 公开信息 | 约束 |
 | --- | --- | --- |
@@ -93,15 +95,15 @@ Python 不接受 Go 发来的“可读文档清单”作为唯一授权事实，
 
 | 数据或写入动作 | 新实现的唯一业务归属 |
 | --- | --- |
-| 用户、Token、组、授权、revision、audit | Go Identity/Access Service + Repository，同事务更新授权与审计 |
-| 会话、消息准入、最终正文与公开引用 | Go Conversation/Chat Service；单会话互斥与幂等在数据库约束落地 |
-| 库配置、文档元数据、enabled、版本创建、任务入队/人工重试 | Go Catalog/Ingestion Service；原文件原子落盘与失败清理 |
-| 任务领取、租约心跳、解析中间结果 | Python Worker Repository，不让 Go handler 模拟任务完成 |
+| 用户、Token、组、授权、revision、audit | Python Identity/Access 用例 + Repository，同事务更新授权与审计 |
+| 会话、消息准入、最终正文与公开引用 | Python Conversation/Chat 用例；单会话互斥与幂等在数据库约束落地 |
+| 库配置、文档元数据、enabled、版本创建、任务入队/人工重试 | Python Catalog/Ingestion 用例；原文件原子落盘与失败清理 |
+| 任务领取、租约心跳、解析中间结果 | Python Worker Repository，不让 API handler 模拟任务完成 |
 | 切片、向量、版本完成、active_version、快照和任务完成 | Python Publication Repository，一个受租约约束的跨表事务 |
 | 私有运行记录、模型尝试、检查与草稿诊断 | Python Run Repository；公开 API 只读其允许投影 |
 | 不可变评测题/原文/人工裁决、离线请求账本 | 独立评测 ArtifactStore，绑定版本与哈希，不混入业务真数据 |
 
-同表不同操作须限定写列：Go 不直接写 chunks/版本完成/active_version；Python 不写用户、授权或消息公开终态。文档启停与发布争用时，发布事务锁定知识库/文档并按当前 enabled 构造快照，不能复活已停用文档。
+同表不同操作须限定写列：API 的 Catalog 用例不直接写 chunks/版本完成/active_version；Worker 和问答图节点不写用户、授权或消息公开终态。语言统一后仍按用例与事务归属写入，不能共享一个任意改表的 Store。文档启停与发布争用时，发布事务锁定知识库/文档并按当前 enabled 构造快照，不能复活已停用文档。
 
 新建独立迁移执行入口与迁移锁，不在每次服务启动时运行任意 DDL。优先兼容既有表与 ID，通过增量迁移增加 run_id、运行记录和必要约束；不强制重算向量。若物理 schema 需要变化，先提供明确映射、双向核对和副本恢复验证，再申请切换。
 

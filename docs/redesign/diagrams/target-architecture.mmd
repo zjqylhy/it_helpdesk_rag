@@ -1,21 +1,26 @@
 flowchart TB
-  V[待实现 Vue 功能页面与类型化客户端] --> H[待实现 Go HTTP 适配层]
-  H --> A[待实现 Go 业务用例与领域策略]
-  A --> GR[待实现 Go Repository 与事务边界]
-  GR --> DB[(保留数据 新建访问层与迁移)]
-  A --> FS[待实现 FileStore 接口]
+  V[待实现 Vue 功能页面与类型化客户端] --> WEB[待实现 Nginx 静态资源与API代理]
+  subgraph API[待实现 Python API 单进程]
+    H[FastAPI HTTP与SSE适配] --> A[身份 权限 文档 会话与Chat用例]
+    A --> AR[授权屏障 请求注册与取消]
+    A -->|类型化进程内调用| LG[LangGraph 问答执行图]
+    LG --> NP[独立节点与端口接口]
+    NP --> ES[EventSink 白名单事件]
+    ES --> H
+  end
+  WEB --> H
+  A --> BR[业务 Repository与事务]
+  BR --> DB[(保留 PostgreSQL与pgvector数据)]
+  A --> FS[FileStore 上传与失败清理]
   FS --> FILE[(保留原文件卷)]
-  A --> IP[版本化内部协议]
-  IP --> PY[待实现 Python HTTP与事件适配]
-  PY --> LG[待实现 LangGraph 问答执行图]
-  LG --> NP[待实现 独立业务节点与端口接口]
-  NP --> PR[待实现 授权检索与运行 Repository]
+  AR --> DB
+  NP --> PR[授权检索与运行 Repository]
   PR --> DB
-  NP --> MP[待实现 ModelPort 预算 重试 网关适配]
+  NP --> MP[ModelPort 预算 重试 网关适配]
   MP --> MODEL[配置的聊天 向量 重排服务]
-  WK[待实现 独立 Worker 入口] --> ING[待实现 入库用例与发布 Repository]
+  WK[待实现 独立 Python Worker进程] --> ING[解析 切片 入库用例与发布 Repository]
   ING --> DB
   ING -->|只读原文件| FILE
   ING --> MP
-  EV[待实现 冻结评测 Runner] -->|同一编译图 受控运行上下文| LG
+  EV[待实现 独立评测 CLI] -->|同一编译图 受控运行上下文| LG
   EV --> ART[(保留旧资产 新建不可变实验产物)]

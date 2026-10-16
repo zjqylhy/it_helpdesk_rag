@@ -8,7 +8,7 @@ Windows 可使用 Docker Desktop 部署完整应用，也可按 [Windows 原生�
 
 第二阶段补齐跨库评测、工程验证、反馈业务闭环及用户组/文档权限。需求与技术方案已确认，按批次实现；见 [第二阶段需求](docs/spec-v2.md) 和 [第二阶段技术方案](docs/technical-plan-v2.md)。当前没有云资源，实际云部署另行验收。
 
-2026-10-17 用户确认 Go、Python、Vue 和数据访问层全部按新架构重新实现，采用 LangGraph 编排，并包含查询拆解实验闭环、逐任务证据覆盖、一次补检索及独立回答检查。当前处于架构与规格人工确认阶段，尚未开始新业务代码；见 [全栈重新设计入口](docs/redesign/README.md)。下方“已实现”仍描述现有应用，不能当作目标重实现已完成。
+2026-10-17 用户确认后端改为全 Python，Vue 和数据访问层仍全部按新架构重新实现，采用 FastAPI、LangGraph 与独立 Python Worker，并包含查询拆解实验闭环、逐任务证据覆盖、一次补检索及独立回答检查。整体流程与语言方向已确认，调整后的架构与规格待人工确认，尚未开始新业务代码；见 [全栈重新设计入口](docs/redesign/README.md)。下方“已实现”仍描述现有应用，不能当作目标重实现已完成。
 
 业务 API 使用 Go/Gin，RAG 与 Worker 使用 Python/FastAPI，前端使用 Vue 3，数据保存到 PostgreSQL/pgvector。中文 BM25 与向量检索经 RRF 融合后调用 Qwen 重排，DeepSeek 根据证据生成带来源的回答。
 

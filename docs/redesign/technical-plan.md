@@ -1,67 +1,74 @@
 # 全栈重实现技术方案
 
-日期：2026-10-17。状态：待人工确认。对应 [需求规格](spec.md) 和 [领域与接口契约](contracts.md)。本方案取代旧方案中“普通 Python 自行编排”的技术选择，尚无目标代码实现或新质量成绩。
+日期：2026-10-17。状态：待人工确认。对应 [需求规格](spec.md) 和 [领域与接口契约](contracts.md)。用户已确认改为全 Python 后端。本方案取代双语言目标架构及旧方案中“普通 Python 自行编排”的选择，尚无目标代码实现或新质量成绩。
 
 ## 1 从零选型与职责
 
 | 选择 | 对应需求与收益 | 接受的代价和边界 |
 | --- | --- | --- |
-| Go/Gin 业务后端 | 身份、文档、权限、会话、事务和 SSE 准入独立于模型流程；发挥 Go 后端工程能力 | Go/Python 内部协议必须版本化；不在两边各写一套组织理解 |
-| Python/FastAPI 与 LangGraph | Python 承接解析、检索与模型；StateGraph 明确表达覆盖、补查和回答修正的条件边，减少维护自制执行器 | 需要理解图状态更新与流协议，增加框架集成和版本验证；不能替代业务权限、成本和语义校验 |
+| Python/FastAPI 业务 API | 身份、文档、权限、会话、事务与 SSE 由领域用例实现；业务与问答同进程调用，减少双语言契约和转发成本 | 需要类型检查、运行时输入校验和测试；阻塞或 CPU 密集工作不得直接占用异步事件循环 |
+| Python/LangGraph 问答编排 | StateGraph 明确表达覆盖、补查和回答修正的条件边，减少维护自制执行器 | 需要理解图状态更新与流协议，增加框架集成和版本验证；不能替代业务权限、成本和语义校验 |
+| 独立 Python Worker | 文件解析、切片、Embedding 与事务发布在独立进程运行，隔离入库负载和恢复周期 | API/Worker 分别管理连接池与生命周期；同一代码包不意味着同一运行进程 |
 | Vue 3/TypeScript | 问答、知识管理、权限界面与有类型的流事件状态 | 按功能拆页面/组合式状态/客户端，前端不判断可信权限 |
 | PostgreSQL/pgvector + 文件卷 | 业务授权、不可变知识版本、任务租约、检索与审计能在单机事务边界管理 | 文本检索和向量规模先实测；不宣称搜索集群或高并发 SLA |
-| 单机 Compose | 进程边界清晰，支持本地与 Linux 一致构建 | 单 Go 实例授权屏障；多副本需重新设计协调，不能直接扩副本数 |
+| 单机 Compose | 进程边界清晰，支持本地与 Linux 一致构建 | 首版单 API 进程授权屏障；Uvicorn workers=1，不能直接增加 API worker 或副本 |
+
+全 Python 的取舍：本项目已需要 Python 的解析、检索、评测与 LangGraph 生态，当前没有必须复用的 Go 平台或压测证明的业务 API 瓶颈。增加 Go 会带来内部协议、跨服务取消、终态协调、双构建与数据职责维护成本，现阶段没有足够收益抵消这些成本。统一后端可复用类型和数据库适配，不以“Python 一定更快”作论据。代价是失去独立 Go 业务运行时的依赖隔离与编译期约束，并需要更严格的异步执行纪律；用清晰模块、类型检查、独立 Worker 和负载验证控制风险。Vue 仍采用 TypeScript，“全 Python”仅指后端。
 
 选择 LangGraph 的收益是本项目已有明确的条件分支与反馈循环，执行图本身会持续演进。自有代码虽然可以完成，但要长期维护阶段转移、状态更新和循环约束；从零设计时，统一编排的收益足以支持引入轻量库。框架适配和依赖维护是已知代价；没有测量数据，不以“更快”或“更省资源”作为选择依据。
 
 首版只用 StateGraph、类型化状态、条件边、Runtime Context 和 custom 流；不启用在线 checkpoint、LangSmith 外传或运行中人工暂停。服务重启后按失败/中断结束请求，历史与任务仍由业务存储保证。未来若启用执行恢复，需另行设计授权重绑定、版本快照、重复模型调用和幂等，不能直接沿用过期权限。
 
-Worker 使用 PostgreSQL 租约而非 LangGraph checkpoint 承担持久任务恢复；问答编排与入库租约各有单一真值，避免双重调度。Worker 与 HTTP 服务改成独立进程入口，可共用同一 Python 镜像。
+Worker 使用 PostgreSQL 租约而非 LangGraph checkpoint 承担持久任务恢复；问答编排与入库租约各有单一真值，避免双重调度。Worker 与 HTTP 服务改成独立进程入口，可共用同一 Python 镜像，但各自拥有连接池、信号处理、健康检查和资源限制。在线图通过异步模型/数据库适配执行；同步文件 I/O 由有界线程池承接，CPU 密集解析在 Worker 执行，本地检索计算若实测阻塞事件循环则通过有界进程执行器隔离，不能仅加 async 就当作非阻塞。
 
-技术依据：[Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)、[持久化](https://docs.langchain.com/oss/python/langgraph/persistence)、[custom streaming](https://docs.langchain.com/oss/python/langgraph/streaming)。依赖在首次实现时解析、锁定并验证与评测依赖兼容；不无条件跟随最新版。
+目标 Compose 为 web、api、worker、db 四个服务：web 提供 Vue 与同源代理，api 是唯一业务 HTTP 入口，worker 没有公开端口。评测与迁移是按需执行的独立 CLI。API 与 Worker 可使用同一镜像的不同入口，原 rag 服务与 Go 镜像在 M6 切换后退出运行。默认依赖与离线评分依赖分组锁定，生产 API 不安装非必需评测工具；后续若模型依赖故障或实测资源争用需要更强隔离，再拆 Python 问答服务，不预先恢复内部 HTTP 链路。
+
+技术依据：[FastAPI 异步执行](https://fastapi.tiangolo.com/async/)、[服务进程](https://fastapi.tiangolo.com/deployment/server-workers/)、[Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)、[持久化](https://docs.langchain.com/oss/python/langgraph/persistence)、[custom streaming](https://docs.langchain.com/oss/python/langgraph/streaming)。依赖在首次实现时解析、锁定并验证与评测依赖兼容；不无条件跟随最新版。
 
 ## 2 目标架构与全栈分层
 
 ```mermaid
 flowchart TB
-  V[待实现 Vue 功能页面与类型化客户端] --> H[待实现 Go HTTP 适配层]
-  H --> A[待实现 Go 业务用例与领域策略]
-  A --> GR[待实现 Go Repository 与事务边界]
-  GR --> DB[(保留数据 新建访问层与迁移)]
-  A --> FS[待实现 FileStore 接口]
+  V[待实现 Vue 功能页面与类型化客户端] --> WEB[待实现 Nginx 静态资源与API代理]
+  subgraph API[待实现 Python API 单进程]
+    H[FastAPI HTTP与SSE适配] --> A[身份 权限 文档 会话与Chat用例]
+    A --> AR[授权屏障 请求注册与取消]
+    A -->|类型化进程内调用| LG[LangGraph 问答执行图]
+    LG --> NP[独立节点与端口接口]
+    NP --> ES[EventSink 白名单事件]
+    ES --> H
+  end
+  WEB --> H
+  A --> BR[业务 Repository与事务]
+  BR --> DB[(保留 PostgreSQL与pgvector数据)]
+  A --> FS[FileStore 上传与失败清理]
   FS --> FILE[(保留原文件卷)]
-  A --> IP[版本化内部协议]
-  IP --> PY[待实现 Python HTTP与事件适配]
-  PY --> LG[待实现 LangGraph 问答执行图]
-  LG --> NP[待实现 独立业务节点与端口接口]
-  NP --> PR[待实现 授权检索与运行 Repository]
+  AR --> DB
+  NP --> PR[授权检索与运行 Repository]
   PR --> DB
-  NP --> MP[待实现 ModelPort 预算 重试 网关适配]
+  NP --> MP[ModelPort 预算 重试 网关适配]
   MP --> MODEL[配置的聊天 向量 重排服务]
-  WK[待实现 独立 Worker 入口] --> ING[待实现 入库用例与发布 Repository]
+  WK[待实现 独立 Python Worker进程] --> ING[解析 切片 入库用例与发布 Repository]
   ING --> DB
   ING -->|只读原文件| FILE
   ING --> MP
-  EV[待实现 冻结评测 Runner] -->|同一编译图 受控运行上下文| LG
+  EV[待实现 独立评测 CLI] -->|同一编译图 受控运行上下文| LG
   EV --> ART[(保留旧资产 新建不可变实验产物)]
 ```
 
 新实现最终目录建议：
 
 ```text
-backend/cmd/api/                       启动和依赖装配
-backend/internal/domain/              身份 范围 文档 会话 终态规则
-backend/internal/application/         Chat Catalog Access Ingestion 用例
-backend/internal/ports/               Repository FileStore RagClient 接口
-backend/internal/adapters/http/       Gin handler middleware SSE
-backend/internal/adapters/postgres/   pgx 查询 事务与映射
-backend/internal/adapters/files/      文件卷适配
-rag/src/helpdesk/domain/              类型及确定性校验
-rag/src/helpdesk/application/         问答 检索 入库 评测用例
-rag/src/helpdesk/graph/               图装配 状态 路由 独立节点
-rag/src/helpdesk/ports/               模型 存储 预算 事件端口
-rag/src/helpdesk/adapters/            PostgreSQL 网关 解析器 文件与报告
-rag/src/helpdesk/entrypoints/         FastAPI Worker CLI
+backend/pyproject.toml                单一 Python 包与锁定依赖
+backend/src/helpdesk/domain/          身份 范围 文档 会话 问答与终态规则
+backend/src/helpdesk/application/     Identity Access Catalog Chat 入库与评测用例
+backend/src/helpdesk/graph/           图装配 状态 路由 独立节点
+backend/src/helpdesk/ports/           Repository FileStore ModelPort Budget EventSink
+backend/src/helpdesk/adapters/http/   FastAPI 路由 中间件 SSE与旧字段投影
+backend/src/helpdesk/adapters/postgres/ psycopg 查询 事务与映射
+backend/src/helpdesk/adapters/        模型网关 解析器 文件与报告
+backend/src/helpdesk/entrypoints/     API Worker Eval Migration 独立入口
+backend/tests/                       领域 契约 图路径 PostgreSQL与进程联测
 frontend/src/features/               auth chat knowledge access
 frontend/src/shared/                 类型化客户端 SSE解析 公共组件
 contracts/                           HTTP SSE 领域 schema 和冻结提示资产
@@ -70,19 +77,21 @@ db/migrations/                       有版本号的 SQL 与副本验证
 
 这是目标路径，当前均不能视为已有实现。实现期可先放在单独 `rewrite/` 根目录中开发和构建，禁止 import 根目录旧源码；完成全栈和数据验收后整体替换最终入口并移除旧实现。旧代码保留在 Git，不长期维护两个生产写入者。
 
+架构图中的 LangGraph、ModelPort 和 Repository 表示可复用代码职责。离线评测在自身进程装配同一图定义与受控依赖，不调用线上图实例，也不共享在线连接池或请求预算。
+
 每个业务节点接收类型化输入并依赖新端口，禁止调用旧 `Pipeline.events/retrieve`、旧 Store 或通过 subprocess 启动旧服务来完成实际业务。旧实现只允许在独立、只读测试环境作外部行为对照。
 
 ## 3 数据访问与基础用例
 
-Go 领域层定义 Principal、Document、Conversation 等规则；Application 组织用例与事务；HTTP 适配仅解析协议和映射结果。所有 SQL 放新 Repository，禁止 handler 拼装业务 SQL。Python 同样通过 AuthorizedCorpus、Snapshot、JobLease、Publication、RunLedger 等端口读写；图节点不直接查数据库。
+Python 领域层统一定义 Principal、Document、Conversation、Evidence 等规则；Application 组织用例与事务；HTTP 适配仅解析协议和映射结果。所有 SQL 放新 Repository，禁止 handler 拼装业务 SQL。问答和 Worker 通过 AuthorizedCorpus、Snapshot、JobLease、Publication、RunLedger 等端口读写；图节点不直接查数据库。业务模块不依赖 FastAPI 请求对象，LangGraph 不包含账号管理等非问答用例。
 
 发布事务由 Python Publication Repository 独占负责：检查有效租约并锁知识库/文档 → 写入切片向量 → 完成版本 → 仅在顺序允许时更新 active_version → 根据当前启用文档创建新快照 → 完成任务。同事务任一步失败全部回滚；上传、权限、启停不能绕过该规则修改活动版本。
 
-采用 pgx/psycopg 的显式 SQL，不额外引入 ORM。授权查询、向量距离排序和发布锁定在 SQL 中明确表达，契约用真实 PostgreSQL/pgvector 负例验证。首版沿用精确向量距离排序和当前 BM25/RRF 口径，不同时引入 ANN、全文索引替换或新切片策略。
+统一采用 psycopg 的显式 SQL，不额外引入 ORM。授权查询、向量距离排序和发布锁定在 SQL 中明确表达，契约用真实 PostgreSQL/pgvector 负例验证。首版沿用精确向量距离排序和当前 BM25/RRF 口径，不同时引入 ANN、全文索引替换或新切片策略。
 
-原文件通过 FileStore 保存 storage_key 和内容哈希，领域层不依赖 Windows/Linux 绝对路径。旧 path 字段先保留并在副本迁移中映射到卷内键，核对每文件哈希，不能猜路径后删文件。Python 只读原文件，Go 控制上传与失败清理。
+原文件通过 FileStore 保存 storage_key 和内容哈希，领域层不依赖 Windows/Linux 绝对路径。旧 path 字段先保留并在副本迁移中映射到卷内键，核对每文件哈希，不能猜路径后删文件。API 对原文件卷可写，控制上传与失败清理；独立 Worker 的原文件卷只读挂载。
 
-新增 RunLedger/ModelAttempt 记录调用开始、完成、未知用量和停止原因；公开 messages 仍由 Go 写终态。私有草稿全文默认只在内存；离线对照需要保存时进入受控私有评测产物，线上诊断优先保存 hash/ID/分类，不默认永久保存模型输入全文。
+新增 RunLedger/ModelAttempt 记录调用开始、完成、未知用量和停止原因；公开 messages 仅由 Python Chat 用例写终态。私有草稿全文默认只在内存；离线对照需要保存时进入受控私有评测产物，线上诊断优先保存 hash/ID/分类，不默认永久保存模型输入全文。
 
 ## 4 LangGraph 节点与路由
 
@@ -170,11 +179,15 @@ Python 只通过 custom 事件输出明确的业务事件，不把 `values/updat
 
 B3 先立即发送 status，再在内存生成草稿与检查；只有最终通过的正文走 answer_delta，然后发送 citations 和 done。B0/B1/B2 仍能运行直接流式模式作为可比对照；线上采用哪个模式由效果、误改和体验验收决定，不因框架接入自动全部开启。
 
-Go 按原契约保存同一 request_id 的唯一消息，保证 seq 有序、至多一个网络终态，处理客户端断连和 Python 错误。没有完整终态的流记 error/interrupted，不当成完成；断连后的数据库落盘使用有界独立上下文，不能继续模型业务。
+Python Chat 用例按原契约保存同一 request_id 的唯一消息，SSE 适配保证 seq 有序、至多一个网络终态，处理客户端断连和图异常。没有完整终态的流记 error/interrupted，不当成完成；断连后的数据库落盘使用有界独立上下文，不能继续模型业务。
 
-授权在 Go 准入、Python 读元数据/原文/向量、模型调用前和每次公开输出前核验。Go 仍是单实例撤权屏障：策略更新、revision 和审计提交后取消旧流，在撤权成功响应之后禁止旧权限片段发送。Python 监听请求取消并关闭上游模型流；已发送到提供商或浏览器的内容无法追回。
+授权在 Python Chat 准入、读元数据/原文/向量、模型调用前和每次公开输出前核验。首版仅部署一个 API 进程（Uvicorn workers=1、一个副本），持有支持取消的异步读写屏障与在途请求注册表；不能把原 Go 进程锁直接当作多进程能力。
 
-provenance 包含已咨询的范围和元数据依赖，不仅是最终引用。Go 初始保存保守范围依赖，不能仅以最终 citations 缩小到忽略已咨询组织信息；读取历史时对失权派生信息整体遮蔽。缓存键包含有效版本集合和授权 revision，不能只按问题或公开快照复用受限证据。
+准入在读屏障内验证 revision 并注册请求；每次公开事件在读屏障内复核授权并进行有界写出。Access 更新取得写屏障，在同一数据库事务更新策略、revision 和审计，提交后标记并取消旧请求，再返回成功。写屏障等待已进入的事件写出结束或有界失败，避免校验后到发送前的竞态；不得在屏障内等待模型或长时间读取文件。权限写入只经 API Access 用例；Worker 不写授权。撤权成功响应后服务端不再发出旧权限片段，但之前写入网络缓冲区或已发送到提供商/浏览器的内容无法追回。后台诊断与离线评测也必须绑定并复核各自授权，不因同包运行绕过。
+
+断连、撤权和总 deadline 取消请求任务，并关闭上游 HTTP 流；异步取消不能强行终止已经执行的同步函数，隔离任务返回后也不得落盘或输出过期结果。多 API 进程/副本需先设计跨进程撤权协调和一致性验收，不能直接加 --workers 或 replicas。
+
+provenance 包含已咨询的范围和元数据依赖，不仅是最终引用。Chat 用例初始保存保守范围依赖，不能仅以最终 citations 缩小到忽略已咨询组织信息；读取历史时对失权派生信息整体遮蔽。缓存键包含有效版本集合和授权 revision，不能只按问题或公开快照复用受限证据。
 
 首次进度、草稿首字、公开正文首字、总时长分别记录。B3 的 server_ttft 以公开正文为准，拒答/澄清无正文首字则记 null，并另记完成耗时。服务端、浏览器和离线评分各自计时，不混成一个 P95。
 
@@ -188,7 +201,7 @@ provenance 包含已咨询的范围和元数据依赖，不仅是最终引用。
 | Token | 累计输入+最大输出预留 ≤48000；覆盖三类模型和重试；可靠计量前不宣称硬保证 |
 | 输出 | 提取/改写 ≤512；覆盖/候选诊断/回答检查 ≤1536；草稿/修正 ≤2048 |
 | 上下文 | scope 融合候选 ≤40；最终≤5段/8000正文字符；候选诊断输入≤12000 Token |
-| deadline | 开发建议110秒，包含排队、SQL、模型、退避和输出；Go外层120秒；单模型≤25秒且不超过剩余时长 |
+| deadline | 开发建议110秒，包含排队、SQL、模型、退避和输出；Python API外层清理窗口120秒；单模型≤25秒且不超过剩余时长 |
 | 图步数 | 建议 recursion_limit=48，作为程序缺陷防线；补查/修正仍由业务次数单独控制 |
 
 24 次是硬请求槽而非平均用量，不能承诺每个阶段都能执行。发请求前先预留槽和 Token，再发 HTTP；成功后对账，超时缺用量保留未知和预留。模型没有匹配 tokenizer/可靠上界时，只能报告估算，不得批准声称 Token 硬限制的运行配置。
@@ -226,12 +239,12 @@ provenance 包含已咨询的范围和元数据依赖，不仅是最终引用。
 | 阶段 | 全栈产出 | 验收与停止条件 |
 | --- | --- | --- |
 | M0 当前 | 现状架构、流程、需求、目标图与契约 | 人工确认后进入新代码；此阶段不改依赖或业务库 |
-| M1 基础 | 新 contracts、迁移、Go domain/application/repository、身份/权限/文档/会话，Python端口及新Vue骨架 | 空库初始化、旧库副本升级、API权限负例、无旧源码依赖 |
-| M2 基线 | 新 Worker、解析/切片/发布、新 LangGraph B0/B1、新模型适配、评测、完整 Vue | 全部已有功能回归；Go/Python联测、浏览器、取消、撤权、版本发布与恢复 |
+| M1 基础 | 新 contracts、迁移、Python domain/application/repository、身份/权限/文档/会话、图端口及新Vue骨架 | 空库初始化、旧库副本升级、API权限负例、无旧源码依赖 |
+| M2 基线 | 新 Worker、解析/切片/发布、新 LangGraph B0/B1、新模型适配、评测、完整 Vue | 全部已有功能回归；API/图/独立Worker联测、浏览器、取消、撤权、版本发布与恢复 |
 | M3 实验闭环 | 旧拆解结果裁决与新协议核对、锁定检索方案 | 无改善保留负结果；未付费授权不运行；新系统不继承旧分数 |
 | M4 覆盖与补查 | 新图 A1/A2、C0/B2、覆盖误判与独立题 | 单次补查、同权限同快照、选择损失不绕过；人工质量/开销验收 |
 | M5 回答检查 | 新图 A3、B3、草稿隔离、误改与首字测量 | 修正≤1、复核≤1、草稿零泄露；先锁定容忍阈值再正式测 |
-| M6 统一切换 | 新Go/Python/Vue/DAL完整构建、恢复演练、升级/回滚说明、移除旧实现 | 人工代码/测试验收；生产数据迁移、推送与部署单独执行 |
+| M6 统一切换 | 新Python API/Worker/Vue/DAL完整构建、恢复演练、升级/回滚说明、移除旧实现 | 人工代码/测试验收；生产数据迁移、推送与部署单独执行 |
 
 开发与联测在独立数据库、文件根和端口运行，不让新旧 Worker 同时写同一套正式任务。新实现可以读取受控副本，不能用启动应用的方式隐式迁移业务库。最终新服务和旧服务不同时作为生产写入者。
 
@@ -239,10 +252,10 @@ provenance 包含已咨询的范围和元数据依赖，不仅是最终引用。
 
 ## 9 验证证据与面试说明
 
-新测试由领域不变量和外部协议生成，不能仅把旧测试复制后改 import。Go 覆盖用例与事务、权限屏障、SSE准入；Python 覆盖实际图路径、模型输入、预算、取消、并发请求隔离、未知输出和故障；Vue 覆盖流事件、部分回答、取消、断连、权限与知识管理。集成测试使用真实 PostgreSQL/pgvector 和本机模型替身，禁止访问付费模型。
+新测试由领域不变量和外部协议生成，不能仅把旧测试复制后改 import。Python 覆盖业务用例与事务、权限屏障、SSE准入及实际图路径、模型输入、预算、取消、并发请求隔离、未知输出和故障；Vue 覆盖流事件、部分回答、取消、断连、权限与知识管理。集成测试使用真实 PostgreSQL/pgvector 和本机模型替身，禁止访问付费模型。
 
-至少检查：未授权 ID 与元数据、同库不同文档权限、撤组/停用账号、历史泄露、缓存隔离、草稿阶段撤权、补查前撤权、非法引用、比较对象缺失、三项任务被静默丢弃、候选有据却未选中、补查仍缺、原正确被改错、超过调用/Token/deadline、Worker失租约与乱序完成、数据库短暂失败、Go/RAG/Worker重启、独立备份恢复。
+至少检查：未授权 ID 与元数据、同库不同文档权限、撤组/停用账号、历史泄露、缓存隔离、草稿阶段撤权、补查前撤权、非法引用、比较对象缺失、三项任务被静默丢弃、候选有据却未选中、补查仍缺、原正确被改错、超过调用/Token/deadline、Worker失租约与乱序完成、数据库短暂失败、API/Worker重启、独立备份恢复。
 
-新 Go test/vet、Python pytest、Vue 类型/构建、全栈联测和浏览器检查通过后按阶段 commit。真实质量报告另列，模型替身只证明控制逻辑。面试描述依据实际实现和数据：可以说明采用 LangGraph 的结构收益、框架适配代价与基线对照；尚未开启的节点和未完成的效果实验都明确标注。
+新 Python 类型检查、pytest、Vue 类型/构建、全栈联测和浏览器检查通过后按阶段 commit。真实质量报告另列，模型替身只证明控制逻辑。面试描述依据实际实现和数据：可以说明统一 Python 如何减少跨服务协议与部署成本、单进程和依赖隔离的限制，以及采用 LangGraph 的结构收益、框架适配代价与基线对照；尚未开启的节点和未完成的效果实验都明确标注。
 
 本次文档与图表核验结果在 [交付验证记录](validation.md) 中列出。目标图是设计，现状图才绑定已有代码快照，不能混用来源。

@@ -59,18 +59,18 @@
     },
     {
       "path": "index.html",
-      "sha256": "2ac2109d1811674b741342057bb94ba9816676a9bd89f5e6bdc900d284b7f463",
-      "bytes": 270898
+      "sha256": "9e248f0fee666b9ee928af8bd1625341fb4c6de37e48f72784bd97ca0be184d9",
+      "bytes": 295895
     },
     {
       "path": "target-architecture.mmd",
-      "sha256": "1681ecf483997e04ac411180fe051ecf34cb9da840bdadd2aeb8127cc5cf740e",
-      "bytes": 1013
+      "sha256": "7c6b3036e96dce3c8748e648c80e6219e8ef8b00d0ce647b1daeead475eb07f4",
+      "bytes": 1110
     },
     {
       "path": "target-architecture.svg",
-      "sha256": "b683ce59744d0d3667a8998e373a2fe0fc954e7a1a6dfb65a9f38f1c57e8f647",
-      "bytes": 35404
+      "sha256": "24c29bfa631a0945c413b9aa6801217157a99b5571ff143b55eca5784f3d7ba7",
+      "bytes": 43322
     },
     {
       "path": "target-workflow.mmd",
@@ -82,5 +82,6 @@
       "sha256": "e5e7d5dc80caab0063db1e1206f7c547741bc2df84ff0d00e510ac2bdb7b504b",
       "bytes": 80991
     }
-  ]
+  ],
+  "target_backend": "Python/FastAPI + LangGraph + independent Python Worker"
 }
