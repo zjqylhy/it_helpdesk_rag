@@ -1,0 +1,168 @@
+{
+  "$defs": {
+    "ClaimCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "minLength": 1,
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "task_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Task Ids",
+          "type": "array"
+        },
+        "citation_labels": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Citation Labels",
+          "type": "array"
+        },
+        "evidence_spans": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSpan"
+          },
+          "title": "Evidence Spans",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "unsupported",
+            "uncertain"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "start",
+        "end",
+        "task_ids",
+        "citation_labels",
+        "evidence_spans",
+        "status"
+      ],
+      "title": "ClaimCheck",
+      "type": "object"
+    },
+    "EvidenceSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "version_id": {
+          "minLength": 1,
+          "title": "Version Id",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "version_id",
+        "start",
+        "end"
+      ],
+      "title": "EvidenceSpan",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "answer-check-v1",
+      "default": "answer-check-v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "draft_hash": {
+      "minLength": 1,
+      "title": "Draft Hash",
+      "type": "string"
+    },
+    "context_hash": {
+      "minLength": 1,
+      "title": "Context Hash",
+      "type": "string"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ClaimCheck"
+      },
+      "minItems": 1,
+      "title": "Claims",
+      "type": "array"
+    },
+    "missing_task_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Task Ids",
+      "type": "array"
+    },
+    "unsupported_claim_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unsupported Claim Ids",
+      "type": "array"
+    },
+    "invalid_citation_labels": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Invalid Citation Labels",
+      "type": "array"
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "repair",
+        "insufficient",
+        "unknown"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "draft_hash",
+    "context_hash",
+    "claims",
+    "missing_task_ids",
+    "unsupported_claim_ids",
+    "invalid_citation_labels",
+    "verdict"
+  ],
+  "title": "AnswerCheck",
+  "type": "object"
+}

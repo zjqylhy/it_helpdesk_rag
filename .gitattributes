@@ -4,3 +4,6 @@
 .archify/**/*.html whitespace=cr-at-eol,-blank-at-eol
 # 架构规格的图源和渲染产物按原始字节校验。
 docs/redesign/diagrams/** -text whitespace=cr-at-eol
+# 迁移校验和绑定 SQL 字节，跨平台检出统一使用 LF。
+rewrite/db/migrations/*.sql text eol=lf
+rewrite/backend/tests/fixtures/*.sql text eol=lf

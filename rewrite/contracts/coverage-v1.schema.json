@@ -1,0 +1,130 @@
+{
+  "$defs": {
+    "EvidenceSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "version_id": {
+          "minLength": 1,
+          "title": "Version Id",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "version_id",
+        "start",
+        "end"
+      ],
+      "title": "EvidenceSpan",
+      "type": "object"
+    },
+    "TaskCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "minLength": 1,
+          "title": "Task Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "covered",
+            "partial",
+            "missing",
+            "ambiguous",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "support": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSpan"
+          },
+          "title": "Support",
+          "type": "array"
+        },
+        "missing_requirements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Requirements",
+          "type": "array"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "status",
+        "support",
+        "missing_requirements",
+        "reason"
+      ],
+      "title": "TaskCoverage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "coverage-v1",
+      "default": "coverage-v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "round": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Round",
+      "type": "integer"
+    },
+    "context_hash": {
+      "minLength": 1,
+      "title": "Context Hash",
+      "type": "string"
+    },
+    "tasks": {
+      "items": {
+        "$ref": "#/$defs/TaskCoverage"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "title": "Tasks",
+      "type": "array"
+    },
+    "missing_task_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Task Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "round",
+    "context_hash",
+    "tasks",
+    "missing_task_ids"
+  ],
+  "title": "CoverageReport",
+  "type": "object"
+}

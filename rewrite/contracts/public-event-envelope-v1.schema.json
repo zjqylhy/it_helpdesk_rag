@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "enum": [
+        "status",
+        "evidence",
+        "answer_delta",
+        "citations",
+        "refusal",
+        "done",
+        "error"
+      ],
+      "title": "Event",
+      "type": "string"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "message_id": {
+      "title": "Message Id",
+      "type": "string"
+    },
+    "seq": {
+      "minimum": 1,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "data": {
+      "additionalProperties": true,
+      "title": "Data",
+      "type": "object"
+    }
+  },
+  "required": [
+    "event",
+    "request_id",
+    "message_id",
+    "seq",
+    "data"
+  ],
+  "title": "PublicEvent",
+  "type": "object"
+}
