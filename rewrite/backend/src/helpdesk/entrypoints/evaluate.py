@@ -1,23 +1,28 @@
 import argparse
 import asyncio
+import hashlib
 import json
 import os
+import platform
 import time
 from collections.abc import AsyncIterator
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
+from importlib.metadata import version
+from multiprocessing import get_context
 from pathlib import Path
 
-import httpx
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
+from helpdesk.adapters.models.client import model_client
 from helpdesk.adapters.models.gateway import HttpModels
 from helpdesk.adapters.postgres.corpus import PostgresCorpus
 from helpdesk.adapters.postgres.uow import PostgresUnitOfWork
 from helpdesk.application.adjudication import adjudicate
 from helpdesk.application.evaluation import (
+    EvalCase,
     ExperimentLedger,
     blind_packet,
     code_hash,
@@ -30,6 +35,7 @@ from helpdesk.application.evaluation import (
 )
 from helpdesk.application.identity import digest_token
 from helpdesk.application.model_session import Budget, ModelSession
+from helpdesk.application.releases import canonical_hash, prepare_release
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import Principal, Row
 from helpdesk.domain.rag import BoundScope, fingerprint
@@ -71,6 +77,27 @@ def model_identity(settings: Settings) -> Row:
         "timeout": settings.request_timeout,
         "request_calls": settings.request_calls,
         "token_estimate_limit": settings.token_reservation_limit,
+        "request_models": {
+            kind: getattr(settings, kind + "_request_model") or getattr(settings, kind + "_model")
+            for kind in ("chat", "embedding", "rerank")
+        },
+        "ca_sha256": hashlib.sha256(settings.model_ca_file.read_bytes()).hexdigest()
+        if settings.model_ca_file
+        else None,
+        "token_estimator": "utf8-bytes-plus-max-output-v1",
+        "connect_host": settings.model_connect_host,
+        "inference_enabled": settings.model_inference_enabled,
+    }
+
+
+def runtime_identity() -> Row:
+    return {
+        "python": platform.python_version(),
+        "platform": platform.system(),
+        "dependencies": {
+            name: version(name)
+            for name in ("langgraph", "langchain-core", "jieba", "rank-bm25", "httpx", "psycopg", "pydantic")
+        },
     }
 
 
@@ -87,13 +114,21 @@ async def identity(uow: PostgresUnitOfWork) -> tuple[Principal, int]:
 
 
 async def freeze(args: argparse.Namespace, settings: Settings) -> None:
-    cases = load_cases(args.cases)
+    all_cases = load_cases(args.cases)
+    split = getattr(args, "split", "dev")
+    cases = [case for case in all_cases if case.split == split]
+    if not cases:
+        raise ValueError("所选划分没有题目")
+    source_path = getattr(args, "source_corpus", None)
+    if any(case.source for case in cases) and source_path is None:
+        raise ValueError("转换的发布题必须显式绑定 --source-corpus")
+    source_bundle = json.loads(source_path.read_text(encoding="utf-8")) if source_path else None
     strategies, variants = args.strategies.split(","), args.variants.split(",")
     if not set(strategies).issubset({"baseline", "split-v1"}) or not set(variants).issubset(set("ABCD")):
         raise ValueError("不支持的策略或变体")
     if len(strategies) != len(set(strategies)) or len(variants) != len(set(variants)):
         raise ValueError("实验组不能重复")
-    if variants != ["D"] and any(len(c.kb_ids) != 1 for c in cases):
+    if variants != ["D"] and any(c.scope_mode == "default" or len(c.kb_ids) != 1 for c in cases):
         raise ValueError("A/B/C/D 协议仅用于单库；跨库使用 D 的 baseline/split-v1")
     scopes, chunks = {}, {}
     async with dependencies(settings) as (pool, corpus, uow):
@@ -101,6 +136,8 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
         for case in cases:
             scope = await corpus.bind(principal, tuple(case.kb_ids), revision)
             exported = await corpus.export(principal, scope)
+            if source_bundle is not None:
+                verify_source(case, source_bundle, scope, exported, principal.user_id, revision)
             for group in case.evidence_groups:
                 if any(not covered(anchor, exported) for anchor in group):
                     raise ValueError(f"题目 {case.id} 的黄金出处无法在当前授权切片中完整核对")
@@ -113,6 +150,8 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
     write_new(args.out / "corpus.json", chunks)
     manifest = {
         "schema": "rewrite-eval-v1",
+        "split": split,
+        "source_scope_version": source_bundle["scope_version"] if source_bundle else None,
         "subject_id": principal.user_id,
         "authorization_revision": revision,
         "scopes": scopes,
@@ -121,6 +160,7 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
         "code_hash": code_hash(PACKAGE),
         "prompt_hashes": PROMPT_HASHES,
         "models": model_identity(settings),
+        "runtime": runtime_identity(),
         "seed": args.seed,
         "max_calls": args.max_calls,
         "reservation_limit_estimate": args.reservation_limit,
@@ -130,6 +170,42 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
     print(
         json.dumps({"status": "frozen", "cases": len(cases), "runs": len(manifest["plan"]), "model_calls": 0})
     )
+
+
+def verify_source(
+    case: "EvalCase", bundle: Row, scope: BoundScope, chunks: list[Row], user_id: str, revision: int
+) -> None:
+    # 只对照已审原文；不能把黄金事实传给检索或模型。
+    if bundle["scope_version"] != canonical_hash({k: v for k, v in bundle.items() if k != "scope_version"}):
+        raise ValueError("来源语料哈希无效")
+    if (
+        case.source.get("scope_version") != bundle["scope_version"]
+        or user_id != bundle["principal"]["user_id"]
+        or revision != bundle["principal"]["revision"]
+    ):
+        raise ValueError("原来源与当前主体/权限不一致")
+    members = (
+        [m for m in bundle["members"] if m["kb_id"] in case.kb_ids]
+        if case.scope_mode == "selected"
+        else [m for m in bundle["members"] if m["default_search"]]
+    )
+    if (
+        set(scope.kb_ids) != {m["kb_id"] for m in members}
+        or set(scope.version_ids) != {v for m in members for v in m["version_ids"]}
+        or {s["kb_id"]: s["id"] for s in scope.snapshots} != {m["kb_id"]: m["snapshot_id"] for m in members}
+    ):
+        raise ValueError("当前范围/版本/快照与已审核来源不同，禁止生成")
+    keys = ("id", "version_id", "kb_id", "title", "text", "locator", "content_hash", "organization")
+    expected = [
+        {**{k: c[k] for k in keys}, "kb_name": c["knowledge_base_name"]}
+        for c in bundle["corpus"]["chunks"]
+        if c["version_id"] in scope.version_ids
+    ]
+    actual = [{k: c[k] for k in (*keys, "kb_name")} for c in chunks]
+    if canonical_hash(sorted(expected, key=lambda c: c["id"])) != canonical_hash(
+        sorted(actual, key=lambda c: c["id"])
+    ):
+        raise ValueError("当前原文与已审核来源不同")
 
 
 async def execute(args: argparse.Namespace, settings: Settings) -> None:
@@ -145,6 +221,7 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
         or manifest["corpus_hash"] != fingerprint(chunks)
         or manifest["code_hash"] != code_hash(PACKAGE)
         or manifest["models"] != model_identity(settings)
+        or manifest["runtime"] != runtime_identity()
         or manifest["prompt_hashes"] != PROMPT_HASHES
     ):
         raise ValueError("代码、模型或冻结输入漂移；需创建新实验，禁止续接")
@@ -156,11 +233,11 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
     ledger = ExperimentLedger(
         folder / "ledger.sqlite", manifest["max_calls"], manifest["reservation_limit_estimate"]
     )
-    cpu = ProcessPoolExecutor(max_workers=2)
+    cpu = ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn"))
     try:
         async with (
             dependencies(settings) as (pool, corpus, uow),
-            httpx.AsyncClient(timeout=25, trust_env=False) as client,
+            model_client(settings) as client,
         ):
             principal, revision = await identity(uow)
             if principal.user_id != manifest["subject_id"] or revision != manifest["authorization_revision"]:
@@ -380,12 +457,17 @@ def report(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="新图独立评测，冻结和验证默认零模型调用")
     sub = parser.add_subparsers(dest="command", required=True)
+    prepare_parser = sub.add_parser("prepare-scope")
+    prepare_parser.add_argument("source", type=Path)
+    prepare_parser.add_argument("--out", type=Path, required=True)
     freeze_parser = sub.add_parser("freeze")
     freeze_parser.add_argument("cases", type=Path)
     freeze_parser.add_argument("--out", type=Path, required=True)
     freeze_parser.add_argument("--strategies", default="baseline,split-v1")
     freeze_parser.add_argument("--variants", default="D")
     freeze_parser.add_argument("--seed", type=int, default=20261017)
+    freeze_parser.add_argument("--split", choices=["dev", "test"], default="dev")
+    freeze_parser.add_argument("--source-corpus", type=Path)
     freeze_parser.add_argument("--max-calls", type=int, required=True)
     freeze_parser.add_argument("--reservation-limit", type=int, required=True)
     execute_parser = sub.add_parser("run")
@@ -399,6 +481,9 @@ def main() -> None:
     adjudicate_parser.add_argument("--decisions", type=Path, required=True)
     adjudicate_parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
+    if args.command == "prepare-scope":
+        print(json.dumps(prepare_release(args.source, args.out), ensure_ascii=False))
+        return
     if args.command == "adjudicate":
         adjudicate(args.directory, args.decisions, args.out)
         return

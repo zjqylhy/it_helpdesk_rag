@@ -4,7 +4,7 @@ from collections import defaultdict
 from helpdesk.domain.rag import Chunk
 
 
-def bm25_order(query: str, texts: list[str]) -> list[int]:
+def bm25_order(query: str, texts: list[str], ids: list[str] | None = None) -> list[int]:
     import jieba  # type: ignore[import-untyped]
     from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
 
@@ -15,19 +15,17 @@ def bm25_order(query: str, texts: list[str]) -> list[int]:
         return []
     corpus = [tokens(t) or [""] for t in texts]
     scores = BM25Okapi(corpus).get_scores(tokens(query))
-    return sorted(range(len(texts)), key=lambda i: (-scores[i], i))[:20]
+    return sorted(range(len(texts)), key=lambda i: (-scores[i], ids[i] if ids is not None else str(i)))[:20]
 
 
 def rrf(channels: list[list[Chunk]], limit: int = 20) -> list[Chunk]:
     scores: dict[str, float] = defaultdict(float)
     chunks = {}
-    positions: dict[str, int] = {}
     for channel in channels:
         for rank, chunk in enumerate(channel, 1):
             chunks[chunk.id] = chunk
-            positions.setdefault(chunk.id, len(positions))
             scores[chunk.id] += 1 / (60 + rank)
-    return [chunks[key] for key in sorted(scores, key=lambda k: (-scores[k], positions[k]))[:limit]]
+    return [chunks[key] for key in sorted(scores, key=lambda k: (-scores[k], k))[:limit]]
 
 
 def round_robin(groups: list[list[Chunk]], limit: int = 40) -> list[Chunk]:

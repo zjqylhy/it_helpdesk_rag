@@ -3,10 +3,10 @@ from collections.abc import AsyncIterator
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from multiprocessing import get_context
 from typing import Annotated
 from urllib.parse import quote
 
-import httpx
 import psycopg
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -17,6 +17,7 @@ from psycopg_pool import AsyncConnectionPool
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from helpdesk.adapters.files.local import LocalFiles
+from helpdesk.adapters.models.client import model_client
 from helpdesk.adapters.models.gateway import HttpModels
 from helpdesk.adapters.postgres.chat import ChatStore
 from helpdesk.adapters.postgres.corpus import PostgresCorpus
@@ -148,11 +149,12 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
             timeout=5,
             kwargs={"row_factory": dict_row, "connect_timeout": 5, "options": "-c statement_timeout=5000"},
         )
-        await pool.open()
-        client = httpx.AsyncClient(timeout=25, trust_env=False, follow_redirects=False)
-        cpu = ProcessPoolExecutor(max_workers=2)
+        client = model_client(settings)
+        # Linux 同样用 spawn，避免子进程继承已启动的连接池线程和网络描述符。
+        cpu = ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn"))
         lease = None
         try:
+            await pool.open()
             await pool.wait(timeout=5)
             lease = await pool.getconn()
             # 同数据库第二 API 进程直接启动失败，不能绕过进程内撤权屏障。

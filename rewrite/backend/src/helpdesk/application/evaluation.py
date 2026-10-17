@@ -20,6 +20,8 @@ class Anchor(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     version_id: str
     paragraph: int = Field(ge=1)
+    page: int | None = Field(default=None, ge=1)
+    section: str | None = None
     start: int = Field(ge=0)
     end: int = Field(gt=0)
     quote: str = Field(min_length=1)
@@ -35,7 +37,8 @@ class EvalCase(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     id: str = Field(min_length=1, max_length=200)
     question: str = Field(min_length=1, max_length=8000)
-    kb_ids: list[str] = Field(min_length=1, max_length=32)
+    kb_ids: list[str] = Field(default_factory=list, max_length=32)
+    scope_mode: Literal["default", "selected"] = "selected"
     history: list[Row] = Field(default_factory=list, max_length=8)
     expected_behavior: Literal["answer", "refuse", "clarify"]
     evidence_groups: list[list[Anchor]] = Field(default_factory=list)
@@ -45,11 +48,18 @@ class EvalCase(BaseModel):
     split: Literal["dev", "test"]
     reviewer: str = Field(min_length=1)
     reviewed_at: str = Field(min_length=1)
+    fact_topics: list[str] = Field(default_factory=list)
+    scene: str = ""
+    expected_route_kb_ids: list[str] | None = None
+    expected_required_kb_ids: list[str] = Field(default_factory=list)
+    source: Row = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def complete(self) -> "EvalCase":
         if not self.question.strip() or len(set(self.kb_ids)) != len(self.kb_ids):
             raise ValueError("问题或范围无效")
+        if (self.scope_mode == "selected") != bool(self.kb_ids):
+            raise ValueError("指定范围必须列出知识库，默认范围必须为空")
         if self.expected_behavior == "answer" and (
             not self.evidence_groups
             or any(not group for group in self.evidence_groups)
@@ -77,8 +87,9 @@ def load_cases(path: Path) -> list[EvalCase]:
         raise ValueError("题目为空或编号重复")
     themes: dict[str, str] = {}
     for case in cases:
-        if themes.setdefault(case.theme, case.split) != case.split:
-            raise ValueError("同一事实主题不能跨开发与测试划分")
+        for topic in [case.theme, *case.fact_topics]:
+            if themes.setdefault(topic, case.split) != case.split:
+                raise ValueError("同一事实主题不能跨开发与测试划分")
     return cases
 
 
@@ -92,7 +103,10 @@ def covered(anchor: Anchor, chunks: list[Row]) -> bool:
     spans = sorted(
         (c["locator"]["start"], c["locator"]["end"], c["text"])
         for c in chunks
-        if c["version_id"] == anchor.version_id and c["locator"].get("paragraph") == anchor.paragraph
+        if c["version_id"] == anchor.version_id
+        and c["locator"].get("paragraph") == anchor.paragraph
+        and c["locator"].get("page") == anchor.page
+        and c["locator"].get("section") == anchor.section
     )
     position = anchor.start
     for start, end, text in spans:

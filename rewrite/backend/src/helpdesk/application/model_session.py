@@ -32,12 +32,16 @@ class Budget:
     def reserve(self, payload: object, output: int) -> int:
         self.remaining()
         # UTF-8 字节数用于保守工程估算，不能冒充与提供商 tokenizer 匹配的硬 Token 保证。
-        estimate = len(json.dumps(payload, ensure_ascii=False).encode()) + output
+        estimate = self.estimate(payload, output)
         if self.calls >= self.max_calls or self.reserved + estimate > self.reservation_limit:
             raise AppError("budget_exhausted", 429, "本次请求预算已用尽")
         self.calls += 1
         self.reserved += estimate
         return estimate
+
+    @staticmethod
+    def estimate(payload: object, output: int) -> int:
+        return len(json.dumps(payload, ensure_ascii=False).encode()) + output
 
 
 class ModelSession:
@@ -88,7 +92,7 @@ class ModelSession:
                 await asyncio.sleep(min(0.2, self.budget.remaining()))
         raise AssertionError("unreachable")
 
-    async def structured(self, stage: str, system: str, payload: Row, limit: int = 512) -> Row:
+    async def structured(self, stage: str, system: str, payload: Row, limit: int = 2048) -> Row:
         async def operation() -> tuple[Row, Usage]:
             result = await self.provider.structured(stage, system, payload, limit)
             return result.value, result.usage

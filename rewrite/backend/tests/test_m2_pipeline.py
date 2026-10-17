@@ -250,7 +250,7 @@ async def test_eval_freeze_dryrun_same_graph_pair_and_drift(
         json.dumps(
             {
                 "id": "case1",
-                "question": "第一项和第二项如何配置？",
+                "question": "分别说明第一项和第二项如何配置？",
                 "kb_ids": [document["kb_id"]],
                 "expected_behavior": "answer",
                 "theme": "settings",
@@ -316,7 +316,15 @@ async def test_scope_requires_all_over_budget_clarifies_without_retrieval(client
             "/api/v1/knowledge-bases", headers=admin, json={"name": f"库{i}", "organization": f"学校{i}"}
         )
         assert response.status_code == 201
+        await client.post(
+            "/api/v1/documents",
+            headers=admin,
+            data={"kb_id": response.json()["id"], "title": "合成文档"},
+            files={"file": ("fixture.txt", f"合成内容{i}".encode())},
+        )
+        await publish(app)
     app.state.test_models.requires_all = True
+    app.state.test_models.calls.clear()
     session = (await client.post("/api/v1/sessions", headers=admin, json={})).json()["id"]
     result = await client.post(
         "/api/v1/chat",
@@ -353,10 +361,12 @@ async def test_cross_organization_comparison_needs_each_objects_citations(client
 
 
 async def test_unknown_scope_id_never_becomes_retrieval_input(client, admin, document, app):
+    await publish(app)
     await client.post(
         "/api/v1/knowledge-bases", headers=admin, json={"name": "第二库", "organization": "第二学校"}
     )
     provider = app.state.test_models
+    provider.calls.clear()
     original = provider.structured
 
     async def invalid_scope(stage, system, payload, limit):

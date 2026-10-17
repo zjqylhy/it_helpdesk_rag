@@ -15,7 +15,7 @@ class Handler(BaseHTTPRequestHandler):
             result = {'data': [{'index': i, 'embedding': [1., .2, .3]} for i, _ in enumerate(body['input'])],
                       'usage': {'prompt_tokens': 5, 'completion_tokens': 0}}
         elif self.path == '/rank':
-            result = {'results': [{'index': i} for i, _ in enumerate(body['documents'])],
+            result = {'results': [{'index': i, 'relevance_score': 1-i/1000} for i, _ in enumerate(body['documents'])],
                       'usage': {'input_tokens': 5, 'output_tokens': 0}}
         elif body.get('stream'):
             self.send_response(200); self.send_header('Content-Type', 'text/event-stream'); self.end_headers()

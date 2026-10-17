@@ -60,6 +60,8 @@ class HttpModels:
                 or not parsed.hostname
                 or parsed.username
                 or parsed.password
+                or parsed.query
+                or parsed.fragment
             ):
                 raise ValueError("模型端点必须是无内嵌凭据的 HTTP(S) 地址")
             if parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
@@ -70,12 +72,25 @@ class HttpModels:
         key = specific or self.settings.model_api_key.get_secret_value()
         return {"Authorization": "Bearer " + key} if key else {}
 
+    def target(self, kind: str) -> tuple[httpx.URL, dict[str, str], dict]:
+        url = httpx.URL(getattr(self.settings, kind + "_url"))
+        headers = self.headers(kind)
+        extensions: dict = {}
+        if self.settings.model_connect_host:
+            headers["Host"] = url.netloc.decode("ascii")
+            extensions["sni_hostname"] = url.host
+            url = url.copy_with(host=self.settings.model_connect_host)
+        return url, headers, extensions
+
     async def post(self, kind: str, payload: Row) -> Row:
+        if not self.settings.model_inference_enabled:
+            raise AppError("inference_disabled", 503, "当前验收环境未启用模型推理")
         url = getattr(self.settings, kind + "_url")
         if not url:
             raise AppError("models_not_configured", 503, "模型服务尚未配置")
         try:
-            async with self.client.stream("POST", url, json=payload, headers=self.headers(kind)) as response:
+            url, headers, extensions = self.target(kind)
+            async with self.client.stream("POST", url, json=payload, headers=headers, extensions=extensions) as response:
                 if response.status_code in {429, 500, 502, 503, 504}:
                     raise TransientModelError()
                 if not response.is_success:
@@ -97,17 +112,18 @@ class HttpModels:
 
     def chat_payload(self, system: str, payload: Row, limit: int) -> Row:
         return {
-            "model": self.settings.chat_model,
+            "model": self.settings.chat_request_model or self.settings.chat_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
             "temperature": 0,
+            "stream": False,
             "max_tokens": limit,
         }
 
     async def structured(self, stage: str, system: str, payload: Row, limit: int) -> Reply:
-        body = self.chat_payload(system, payload, limit)
+        body = self.chat_payload(system + "\n仅返回 JSON 对象。", payload, limit)
         body["response_format"] = {"type": "json_object"}
         result = await self.post("chat", body)
         try:
@@ -125,9 +141,10 @@ class HttpModels:
         result = await self.post(
             "embedding",
             {
-                "model": self.settings.embedding_model,
+                "model": self.settings.embedding_request_model or self.settings.embedding_model,
                 "input": texts,
                 "dimensions": self.settings.embedding_dimension,
+                "encoding_format": "float",
             },
         )
         try:
@@ -152,16 +169,17 @@ class HttpModels:
         body: Row
         if self.settings.rerank_format == "qwen":
             body = {
-                "model": self.settings.rerank_model,
+                "model": self.settings.rerank_request_model or self.settings.rerank_model,
                 "input": {"query": query, "documents": texts},
                 "parameters": {"top_n": len(texts)},
             }
         elif self.settings.rerank_format == "generic":
             body = {
-                "model": self.settings.rerank_model,
+                "model": self.settings.rerank_request_model or self.settings.rerank_model,
                 "query": query,
                 "documents": texts,
                 "top_n": len(texts),
+                "return_documents": False,
             }
         else:
             raise ValueError("未知重排协议")
@@ -171,19 +189,27 @@ class HttpModels:
             indices = [r["index"] for r in rows]
             if sorted(indices) != list(range(len(texts))) or any(type(i) is not int for i in indices):
                 raise provider_error()
+            if any(
+                type(row.get("relevance_score")) not in {int, float}
+                or not math.isfinite(row["relevance_score"])
+                for row in rows
+            ):
+                raise provider_error()
+            indices = [row["index"] for row in sorted(rows, key=lambda row: -row["relevance_score"])]
         except (KeyError, TypeError, ValueError) as error:
             raise provider_error() from error
         return indices, usage(result.get("usage"))
 
     async def generate(self, system: str, payload: Row, limit: int) -> AsyncIterator[TextDelta]:
+        if not self.settings.model_inference_enabled:
+            raise AppError("inference_disabled", 503, "当前验收环境未启用模型推理")
         body = self.chat_payload(system, payload, limit)
         body.update(stream=True, stream_options={"include_usage": True})
         if not self.settings.chat_url:
             raise AppError("models_not_configured", 503, "模型服务尚未配置")
         try:
-            async with self.client.stream(
-                "POST", self.settings.chat_url, json=body, headers=self.headers("chat")
-            ) as response:
+            url, headers, extensions = self.target("chat")
+            async with self.client.stream("POST", url, json=body, headers=headers, extensions=extensions) as response:
                 if not response.is_success:
                     raise AppError("provider_error", 502, "模型流请求失败")
                 data: list[str] = []

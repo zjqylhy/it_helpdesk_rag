@@ -75,9 +75,11 @@ async def admit(state: State, runtime: Runtime[Context]) -> State:
 async def resolve_scope(state: State, runtime: Runtime[Context]) -> State:
     ctx = runtime.context
     emit(runtime, "status", {"stage": "understanding", "message": "正在确认问题范围"})
-    if not ctx.scope.kb_ids:
+    if not ctx.scope.kb_ids or not ctx.scope.version_ids:
         return {"behavior": "refuse", "kb_ids": [], "required": []}
     query = state["query"]
+    readable = {s["kb_id"] for s in ctx.scope.snapshots if set(s["version_ids"]) & set(ctx.scope.version_ids)}
+    metadata = [kb for kb in ctx.scope.knowledge_bases if kb["id"] in readable]
     if len(ctx.scope.kb_ids) == 1:
         if ctx.run.history:
             rewrite = await ctx.models.structured(
@@ -86,30 +88,39 @@ async def resolve_scope(state: State, runtime: Runtime[Context]) -> State:
             value = rewrite.get("query")
             if isinstance(value, str) and value.strip() and len(value) <= 8000:
                 query = value
-        return {"query": query, "behavior": "search", "kb_ids": list(ctx.scope.kb_ids), "required": []}
+        organization = ctx.scope.knowledge_bases[0]["organization"]
+        return {
+            "query": f"适用组织：{organization}\n问题：{query}",
+            "behavior": "search",
+            "kb_ids": list(ctx.scope.kb_ids),
+            "required": [],
+        }
     result = await ctx.models.structured(
         "scope",
         PROMPTS["scope"],
         {
             "question": query,
             "history": list(ctx.run.history),
-            "available_knowledge_bases": list(ctx.scope.knowledge_bases),
+            "available_knowledge_bases": [
+                {key: kb[key] for key in ("id", "name", "organization")} for kb in metadata
+            ],
         },
     )
     try:
         decision = ScopeDecision.model_validate(result)
     except ValueError as error:
         raise AppError("invalid_scope_decision", 502, "范围判断格式无效") from error
-    if not set(decision.kb_ids + decision.option_ids).issubset(ctx.scope.kb_ids):
+    if not set(decision.kb_ids + decision.option_ids).issubset(readable):
         raise AppError("invalid_scope_decision", 502, "范围判断越出授权范围")
-    ids = list(dict.fromkeys(decision.kb_ids)) or list(ctx.scope.kb_ids)
-    if decision.requires_all and len(ids) > 5:
+    ids = [key for key in ctx.scope.kb_ids if key in decision.kb_ids] or list(ctx.scope.kb_ids)
+    required = [key for key in ids if key in readable] if decision.requires_all else []
+    if len(required) > 5:
         return {"behavior": "clarify", "kb_ids": ids, "required": []}
     return {
         "query": decision.query,
         "behavior": decision.behavior,
         "kb_ids": ids,
-        "required": ids if decision.requires_all else [],
+        "required": required,
     }
 
 
@@ -117,8 +128,8 @@ async def plan_query(state: State, runtime: Runtime[Context]) -> State:
     query = state["query"]
     queries = [query]
     split = {"attempted": False, "accepted": False}
-    if runtime.context.run.server_strategy_id == "split-v1" and re.search(
-        r"和|与|以及|分别|同时|对比|比较|区别|；", query
+    if runtime.context.run.server_strategy_id == "split-v1" and (
+        state.get("required") or re.search(r"同时|分别|以及|并且|比较|区别|两篇|两库", query)
     ):
         split["attempted"] = True
         try:
@@ -133,7 +144,7 @@ async def plan_query(state: State, runtime: Runtime[Context]) -> State:
                     for p in parts
                 )
             ):
-                queries.extend(f"完整问题：{query}\n子任务：{p}" for p in parts)
+                queries.extend(f"原问题及适用条件：{query}\n重点子任务：{p}" for p in parts)
                 split["accepted"] = True
         except AppError as error:
             if error.code != "invalid_provider_response":
@@ -148,10 +159,10 @@ async def plan_query(state: State, runtime: Runtime[Context]) -> State:
     }
 
 
-async def lexical_order(ctx: Context, query: str, texts: list[str]) -> list[int]:
+async def lexical_order(ctx: Context, query: str, texts: list[str], ids: list[str]) -> list[int]:
     await ctx.cpu_slots.acquire()
     try:
-        future = asyncio.get_running_loop().run_in_executor(ctx.cpu, bm25_order, query, texts)
+        future = asyncio.get_running_loop().run_in_executor(ctx.cpu, bm25_order, query, texts, ids)
     except BaseException:
         ctx.cpu_slots.release()
         raise
@@ -164,15 +175,22 @@ async def retrieve(state: State, runtime: Runtime[Context]) -> State:
     ctx = runtime.context
     emit(runtime, "status", {"stage": "retrieving", "message": "正在检索授权资料"})
     channels: dict[str, list[list[Chunk]]] = {key: [] for key in state["kb_ids"]}
+    corpus = {
+        kb_id: await ctx.corpus.chunks(ctx.run.principal, ctx.scope, kb_id) for kb_id in state["kb_ids"]
+    }
+    if not any(corpus.values()):
+        return {"channels": channels, "trace": {**state["trace"], "candidate_ids": {}}}
     vectors = {}
     if ctx.retrieval_variant != "A":
         for query in state["queries"]:
             vectors[query] = (await ctx.models.embed([query]))[0]
     for kb_id in state["kb_ids"]:
-        chunks = await ctx.corpus.chunks(ctx.run.principal, ctx.scope, kb_id)
+        chunks = corpus[kb_id]
+        if not chunks:
+            continue
         for query in state["queries"]:
             if ctx.retrieval_variant != "B":
-                order = await lexical_order(ctx, query, [c.text for c in chunks])
+                order = await lexical_order(ctx, query, [c.text for c in chunks], [c.id for c in chunks])
                 channels[kb_id].append([chunks[i] for i in order])
             if ctx.retrieval_variant != "A":
                 vector = await ctx.corpus.vector(ctx.run.principal, ctx.scope, kb_id, vectors[query])
@@ -197,7 +215,8 @@ async def rerank(state: State, runtime: Runtime[Context]) -> State:
     if not fused:
         return {"ranked": []}
     order = await runtime.context.models.rank(
-        state["query"], [f"{c.kb_name} {c.organization} {c.title}\n{c.text}" for c in fused]
+        state["query"],
+        [f"知识库：{c.kb_name}；适用组织：{c.organization}；文档：{c.title}\n{c.text}" for c in fused],
     )
     if sorted(order) != list(range(len(fused))):
         raise AppError("invalid_rerank", 502, "重排结果不完整")
@@ -222,6 +241,21 @@ def evidence(state: State) -> list[Row]:
     return [chunk.evidence(f"C{i + 1}") for i, chunk in enumerate(state["selected"])]
 
 
+def model_evidence(state: State) -> list[Row]:
+    # 冻结模型的可见字段；稳定 ID 留给业务引用和诊断，不混入实验提示。
+    return [
+        {
+            "label": f"C{i + 1}",
+            "text": c.text,
+            "title": c.title,
+            "section": c.locator.get("section", ""),
+            "knowledge_base": c.kb_name,
+            "organization": c.organization,
+        }
+        for i, c in enumerate(state["selected"])
+    ]
+
+
 async def sufficiency(state: State, runtime: Runtime[Context]) -> State:
     selected = state["selected"]
     if not selected or not set(state["required"]).issubset({c.kb_id for c in selected}):
@@ -229,8 +263,16 @@ async def sufficiency(state: State, runtime: Runtime[Context]) -> State:
     result = await runtime.context.models.structured(
         "sufficiency",
         PROMPTS["sufficiency"],
-        {"question": state["query"], "evidence": evidence(state)},
-        limit=1536,
+        {
+            "question": state["query"],
+            "evidence": model_evidence(state),
+            "required_organizations": [
+                kb["organization"]
+                for kb in runtime.context.scope.knowledge_bases
+                if kb["id"] in state["required"]
+            ],
+        },
+        limit=2048,
     )
     try:
         decision = Sufficiency.model_validate(result)
@@ -257,10 +299,10 @@ async def generate(state: State, runtime: Runtime[Context]) -> State:
             ],
         },
     )
-    system = PROMPTS["answer"] + (PROMPTS["comparison_suffix"] if state["required"] else "")
+    system = PROMPTS["answer"] + PROMPTS["comparison_suffix"]
     answer = ""
     async for delta in runtime.context.models.generate(
-        system, {"question": state["query"], "evidence": evidence(state)}
+        system, {"question": state["query"], "evidence": model_evidence(state)}
     ):
         answer += delta
         emit(runtime, "answer_delta", {"text": delta})
@@ -312,6 +354,8 @@ async def finalize(state: State, runtime: Runtime[Context]) -> State:
                 **state.get("trace", {}),
                 "prompt_hashes": PROMPT_HASHES,
                 "strategy": runtime.context.run.server_strategy_id,
+                "routed_kb_ids": state.get("kb_ids", []),
+                "required_kb_ids": state.get("required", []),
             },
         )
     }

@@ -14,6 +14,9 @@ def isolated_parse(data: bytes, filename: str) -> list[ParsedChunk]:
         k: v for k, v in os.environ.items() if k in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG"}
     }
     payload = json.dumps({"filename": filename, "data": base64.b64encode(data).decode()}).encode()
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW
     try:
         response = subprocess.run(
             [sys.executable, "-I", "-m", "helpdesk.entrypoints.parse"],
@@ -21,7 +24,7 @@ def isolated_parse(data: bytes, filename: str) -> list[ParsedChunk]:
             capture_output=True,
             timeout=30,
             env=env,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            creationflags=creationflags,
             check=True,
         )
         result = json.loads(response.stdout)

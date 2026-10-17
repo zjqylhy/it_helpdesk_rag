@@ -1,12 +1,12 @@
 import argparse
 import asyncio
 
-import httpx
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from helpdesk.adapters.files.local import LocalFiles
+from helpdesk.adapters.models.client import model_client
 from helpdesk.adapters.models.gateway import HttpModels
 from helpdesk.adapters.parsing.process import parse_file
 from helpdesk.adapters.postgres.jobs import JobStore
@@ -18,7 +18,7 @@ from helpdesk.settings import Settings
 
 
 async def serve(settings: Settings, once: bool = False) -> None:
-    if not settings.embedding_url or not settings.embedding_model:
+    if settings.model_inference_enabled and (not settings.embedding_url or not settings.embedding_model):
         raise RuntimeError("Worker 需要显式配置向量模型端点与名称")
     if settings.worker_heartbeat_seconds >= settings.worker_lease_seconds / 2:
         raise RuntimeError("心跳间隔必须小于租约的一半")
@@ -30,7 +30,7 @@ async def serve(settings: Settings, once: bool = False) -> None:
         timeout=5,
         kwargs={"row_factory": dict_row, "connect_timeout": 5, "options": "-c statement_timeout=5000"},
     )
-    async with pool, httpx.AsyncClient(timeout=25, trust_env=False, follow_redirects=False) as client:
+    async with pool, model_client(settings) as client:
         await pool.wait(timeout=5)
         async with pool.connection() as conn:
             row = await (await conn.execute("SELECT max(version) AS version FROM app_migrations")).fetchone()
@@ -45,6 +45,11 @@ async def serve(settings: Settings, once: bool = False) -> None:
             parse_file,
         )
         while True:
+            if not settings.model_inference_enabled:
+                if once:
+                    return
+                await asyncio.sleep(1)
+                continue
             worked = await worker.once()
             if once:
                 return

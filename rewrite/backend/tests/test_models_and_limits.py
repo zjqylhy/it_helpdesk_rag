@@ -41,7 +41,7 @@ async def test_http_protocol_validates_vectors_ranking_and_wire_usage():
             return httpx.Response(
                 200,
                 json={
-                    "results": [{"index": 1}, {"index": 0}],
+                    "results": [{"index": 0, "relevance_score": 0.1}, {"index": 1, "relevance_score": 0.9}],
                     "usage": {"input_tokens": 8, "output_tokens": 0},
                 },
             )

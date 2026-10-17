@@ -41,8 +41,11 @@ def wait(url,process):
 
 
 def main():
-    state=json.loads((ROOT/'data/rewrite-m1-postgres/state.json').read_text())
-    params={'host':'127.0.0.1','port':state['port'],'user':'postgres','password':state['password'],'dbname':'postgres'}
+    if os.environ.get('HD_TEST_DATABASE_URL'):
+        params=psycopg.conninfo.conninfo_to_dict(os.environ['HD_TEST_DATABASE_URL'])
+    else:
+        state=json.loads((ROOT/'data/rewrite-m1-postgres/state.json').read_text())
+        params={'host':'127.0.0.1','port':state['port'],'user':'postgres','password':state['password'],'dbname':'postgres'}
     name='m1test_'+uuid4().hex
     with psycopg.connect(**params,autocommit=True) as conn:
         conn.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))

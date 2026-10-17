@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     chat_model: str = ""
     embedding_model: str = ""
     rerank_model: str = ""
+    chat_request_model: str = ""
+    embedding_request_model: str = ""
+    rerank_request_model: str = ""
+    model_ca_file: Path | None = None
+    model_connect_host: str = ""
+    model_inference_enabled: bool = True
     model_api_key: SecretStr = SecretStr("")
     chat_api_key: SecretStr = SecretStr("")
     embedding_api_key: SecretStr = SecretStr("")
@@ -33,7 +39,7 @@ class Settings(BaseSettings):
 
     @property
     def models_ready(self) -> bool:
-        return all(
+        return self.model_inference_enabled and all(
             (
                 self.chat_url,
                 self.embedding_url,

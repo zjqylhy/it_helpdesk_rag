@@ -36,6 +36,7 @@ class PostgresCorpus:
             )
             if len(selected) > 32:
                 raise AppError("scope_too_large", 400, "请指定不超过 32 个知识库")
+            selected.sort(key=lambda kb: kb["id"])
             ids = [k["id"] for k in selected]
             versions = await queries.many(
                 f"""SELECT v.id,v.dimension,v.embedding_model,d.kb_id FROM document_versions v
@@ -96,7 +97,7 @@ class PostgresCorpus:
             rows = await queries.many(
                 CHUNK_SELECT
                 + f""" WHERE c.version_id=ANY(%s) AND d.kb_id=%s
-                AND d.enabled AND {VISIBLE} ORDER BY c.id""",
+                AND d.enabled AND {VISIBLE} ORDER BY c.version_id,c.ordinal""",
                 (list(scope.version_ids), kb_id, principal.role, principal.user_id),
             )
             return [Chunk(**r) for r in rows]

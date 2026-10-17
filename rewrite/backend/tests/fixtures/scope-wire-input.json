@@ -1,0 +1,219 @@
+{
+  "members": [
+    {
+      "id": "snapshot-a",
+      "kb_id": "kb-a",
+      "name": "A合成知识库",
+      "organization": "A合成学校",
+      "version_ids": [
+        "version-a"
+      ]
+    },
+    {
+      "id": "snapshot-b",
+      "kb_id": "kb-b",
+      "name": "B合成知识库",
+      "organization": "B合成学校",
+      "version_ids": [
+        "version-b"
+      ]
+    }
+  ],
+  "chunks": [
+    {
+      "id": "kb-a-chunk-2",
+      "version_id": "version-a",
+      "ordinal": 1,
+      "text": "第一项配置。第二项绑定。合成流程步骤。",
+      "locator": {
+        "paragraph": 2,
+        "start": 0,
+        "end": 19,
+        "section": "合成配置章节"
+      },
+      "content_hash": "synthetic-hash",
+      "embedding_model": "fixture-embed",
+      "dimension": 3,
+      "title": "合成手册",
+      "filename": "manual.txt",
+      "source": "synthetic",
+      "kb_id": "kb-a",
+      "knowledge_base_name": "A合成知识库",
+      "organization": "A合成学校"
+    },
+    {
+      "id": "kb-a-chunk-1",
+      "version_id": "version-a",
+      "ordinal": 0,
+      "text": "第一项配置。第二项绑定。合成流程步骤。",
+      "locator": {
+        "paragraph": 1,
+        "start": 0,
+        "end": 19,
+        "section": "合成配置章节"
+      },
+      "content_hash": "synthetic-hash",
+      "embedding_model": "fixture-embed",
+      "dimension": 3,
+      "title": "合成手册",
+      "filename": "manual.txt",
+      "source": "synthetic",
+      "kb_id": "kb-a",
+      "knowledge_base_name": "A合成知识库",
+      "organization": "A合成学校"
+    },
+    {
+      "id": "kb-b-chunk-2",
+      "version_id": "version-b",
+      "ordinal": 1,
+      "text": "第一项配置。第二项绑定。合成流程步骤。",
+      "locator": {
+        "paragraph": 2,
+        "start": 0,
+        "end": 19,
+        "section": "合成配置章节"
+      },
+      "content_hash": "synthetic-hash",
+      "embedding_model": "fixture-embed",
+      "dimension": 3,
+      "title": "合成手册",
+      "filename": "manual.txt",
+      "source": "synthetic",
+      "kb_id": "kb-b",
+      "knowledge_base_name": "B合成知识库",
+      "organization": "B合成学校"
+    },
+    {
+      "id": "kb-b-chunk-1",
+      "version_id": "version-b",
+      "ordinal": 0,
+      "text": "第一项配置。第二项绑定。合成流程步骤。",
+      "locator": {
+        "paragraph": 1,
+        "start": 0,
+        "end": 19,
+        "section": "合成配置章节"
+      },
+      "content_hash": "synthetic-hash",
+      "embedding_model": "fixture-embed",
+      "dimension": 3,
+      "title": "合成手册",
+      "filename": "manual.txt",
+      "source": "synthetic",
+      "kb_id": "kb-b",
+      "knowledge_base_name": "B合成知识库",
+      "organization": "B合成学校"
+    }
+  ],
+  "cases": [
+    {
+      "id": "one-scope",
+      "question": "第一项如何配置？",
+      "kb_ids": [
+        "kb-a"
+      ],
+      "strategy": "baseline"
+    },
+    {
+      "id": "history",
+      "question": "如何绑定？",
+      "kb_ids": [
+        "kb-a"
+      ],
+      "history": [
+        {
+          "role": "user",
+          "content": "第一项如何配置？"
+        },
+        {
+          "role": "assistant",
+          "content": "合成历史只作指代线索"
+        }
+      ],
+      "rewritten": "第二项如何绑定？",
+      "strategy": "baseline"
+    },
+    {
+      "id": "multi",
+      "question": "第一项如何配置？",
+      "strategy": "baseline"
+    },
+    {
+      "id": "compare",
+      "question": "比较两所合成学校第一项配置",
+      "requires_all": true,
+      "answer": "A 合成步骤 [C1]。B 合成步骤 [C2]。",
+      "strategy": "baseline"
+    },
+    {
+      "id": "route-one",
+      "question": "A合成学校的配置",
+      "route_ids": [
+        "kb-a"
+      ],
+      "strategy": "baseline"
+    },
+    {
+      "id": "clarify",
+      "question": "怎么登录？",
+      "scope_behavior": "clarify",
+      "strategy": "baseline"
+    },
+    {
+      "id": "refuse",
+      "question": "没有资料的组织",
+      "scope_behavior": "refuse",
+      "strategy": "baseline"
+    },
+    {
+      "id": "split",
+      "question": "分别说明第一项和第二项",
+      "split_parts": [
+        "第一项",
+        "第二项"
+      ],
+      "strategy": "split-v1"
+    },
+    {
+      "id": "fallback",
+      "question": "分别说明第一项和第二项",
+      "split_parts": [
+        "编造的新步骤",
+        "第二项"
+      ],
+      "strategy": "split-v1"
+    },
+    {
+      "id": "no-trigger",
+      "question": "第一项和第二项",
+      "split_parts": [
+        "第一项",
+        "第二项"
+      ],
+      "strategy": "split-v1"
+    },
+    {
+      "id": "required-trigger",
+      "question": "第一项和第二项",
+      "split_parts": [
+        "第一项",
+        "第二项"
+      ],
+      "strategy": "split-v1",
+      "requires_all": true,
+      "answer": "A 步骤 [C1]。B 步骤 [C2]。"
+    },
+    {
+      "id": "suff-refuse",
+      "question": "第一项如何配置？",
+      "sufficiency": "refuse",
+      "strategy": "baseline"
+    },
+    {
+      "id": "suff-clarify",
+      "question": "第一项如何配置？",
+      "sufficiency": "clarify",
+      "strategy": "baseline"
+    }
+  ]
+}

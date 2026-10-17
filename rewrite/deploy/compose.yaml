@@ -1,0 +1,74 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+  api:
+    image: helpdesk-rewrite:${APP_REVISION}
+    build:
+      context: ../..
+      dockerfile: rewrite/deploy/Dockerfile
+      target: runtime
+      args:
+        APP_REVISION: ${APP_REVISION}
+    env_file: .env
+    environment:
+      HD_HOST: 0.0.0.0
+      HD_PORT: 18080
+      HD_UPLOAD_DIR: /data/uploads
+    volumes:
+      - files:/data/uploads
+      - ${GATEWAY_CA_FILE}:/run/certs/gateway.pem:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 512m
+  worker:
+    image: helpdesk-rewrite:${APP_REVISION}
+    command: [python, -m, helpdesk.entrypoints.worker]
+    env_file: .env
+    environment:
+      HD_UPLOAD_DIR: /data/uploads
+    volumes:
+      - files:/data/uploads:ro
+      - ${GATEWAY_CA_FILE}:/run/certs/gateway.pem:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+  web:
+    image: helpdesk-rewrite-web:${APP_REVISION}
+    build:
+      context: ../..
+      dockerfile: rewrite/deploy/Dockerfile
+      target: web
+      args:
+        APP_REVISION: ${APP_REVISION}
+    ports:
+      - 127.0.0.1:${WEB_PORT}:80
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 64m
+volumes:
+  database:
+  files:

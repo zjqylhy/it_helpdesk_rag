@@ -26,7 +26,7 @@ async def test_split_contiguous_parts_and_all_conditions(parts, accepted):
             calls.append(stage)
             return {"subqueries": parts}
 
-    question = "某学校 2026 年第一项和第二项如何处理？"
+    question = "某学校 2026 年分别说明第一项和第二项如何处理？"
     runtime = SimpleNamespace(
         context=SimpleNamespace(run=SimpleNamespace(server_strategy_id="split-v1"), models=Models())
     )
