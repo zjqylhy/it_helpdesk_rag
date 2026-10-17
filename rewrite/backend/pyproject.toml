@@ -28,6 +28,7 @@ helpdesk-admin = "helpdesk.entrypoints.admin:main"
 helpdesk-map-files = "helpdesk.entrypoints.map_files:main"
 helpdesk-worker = "helpdesk.entrypoints.worker:main"
 helpdesk-eval = "helpdesk.entrypoints.evaluate:main"
+helpdesk-rebind = "helpdesk.entrypoints.rebind:main"
 
 [build-system]
 requires = ["hatchling"]

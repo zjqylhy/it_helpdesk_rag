@@ -129,3 +129,19 @@ class PostgresCorpus:
                 (list(scope.version_ids), kb_id, principal.role, principal.user_id, json.dumps(embedding)),
             )
             return [Chunk(**r) for r in rows]
+
+    async def review_export(self, principal: Principal, scope: BoundScope) -> list[Row]:
+        """重新绑定的私有比对输入；不扩大原问答导出的字段或权限。"""
+        await self.check(principal, scope)
+        async with self.pool.connection() as conn:
+            queries = Queries(conn)
+            await self._revision(queries, principal, scope.revision)
+            return await queries.many(
+                CHUNK_SELECT.replace(
+                    " FROM chunks",
+                    ",c.ordinal,v.filename,v.source,v.embedding_model,v.dimension,"
+                    "md5(c.embedding::text) AS vector_hash FROM chunks",
+                )
+                + f" WHERE c.version_id=ANY(%s) AND d.enabled AND {VISIBLE} ORDER BY c.id",
+                (list(scope.version_ids), principal.role, principal.user_id),
+            )

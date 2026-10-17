@@ -35,6 +35,7 @@ from helpdesk.application.evaluation import (
 )
 from helpdesk.application.identity import digest_token
 from helpdesk.application.model_session import Budget, ModelSession
+from helpdesk.application.rebinding import verify_frozen_rebinding, verify_rebinding_approval
 from helpdesk.application.releases import canonical_hash, prepare_release
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import Principal, Row
@@ -114,6 +115,9 @@ async def identity(uow: PostgresUnitOfWork) -> tuple[Principal, int]:
 
 
 async def freeze(args: argparse.Namespace, settings: Settings) -> None:
+    approval_hash = verify_rebinding_approval(
+        args.cases, getattr(args, "source_corpus", None), getattr(args, "rebind_approval", None)
+    )
     all_cases = load_cases(args.cases)
     split = getattr(args, "split", "dev")
     cases = [case for case in all_cases if case.split == split]
@@ -148,10 +152,17 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
     cases_data = [c.model_dump() for c in cases]
     write_new(args.out / "cases.json", cases_data)
     write_new(args.out / "corpus.json", chunks)
+    if approval_hash:
+        # 将真实审批字节保留到冻结目录，后续执行继续核对，避免只留下口头确认。
+        (args.out / "rebind-approval.json").write_bytes(args.rebind_approval.read_bytes())
+        (args.out / "rebind-review-packet.json").write_bytes(
+            (args.cases.parent / "review-packet.json").read_bytes()
+        )
     manifest = {
         "schema": "rewrite-eval-v1",
         "split": split,
         "source_scope_version": source_bundle["scope_version"] if source_bundle else None,
+        "rebind_approval_sha256": approval_hash,
         "subject_id": principal.user_id,
         "authorization_revision": revision,
         "scopes": scopes,
@@ -195,7 +206,18 @@ def verify_source(
         or {s["kb_id"]: s["id"] for s in scope.snapshots} != {m["kb_id"]: m["snapshot_id"] for m in members}
     ):
         raise ValueError("当前范围/版本/快照与已审核来源不同，禁止生成")
-    keys = ("id", "version_id", "kb_id", "title", "text", "locator", "content_hash", "organization")
+    keys: tuple[str, ...] = (
+        "id",
+        "version_id",
+        "kb_id",
+        "title",
+        "text",
+        "locator",
+        "content_hash",
+        "organization",
+    )
+    if all("vector_hash" in c for c in bundle["corpus"]["chunks"]):
+        keys += ("vector_hash",)
     expected = [
         {**{k: c[k] for k in keys}, "kb_name": c["knowledge_base_name"]}
         for c in bundle["corpus"]["chunks"]
@@ -213,6 +235,8 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
 
     folder = args.directory
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("rebind_approval_sha256"):
+        verify_frozen_rebinding(folder, manifest["rebind_approval_sha256"])
     data = json.loads((folder / "cases.json").read_text(encoding="utf-8"))
     chunks = json.loads((folder / "corpus.json").read_text(encoding="utf-8"))
     if (
@@ -468,6 +492,7 @@ def main() -> None:
     freeze_parser.add_argument("--seed", type=int, default=20261017)
     freeze_parser.add_argument("--split", choices=["dev", "test"], default="dev")
     freeze_parser.add_argument("--source-corpus", type=Path)
+    freeze_parser.add_argument("--rebind-approval", type=Path)
     freeze_parser.add_argument("--max-calls", type=int, required=True)
     freeze_parser.add_argument("--reservation-limit", type=int, required=True)
     execute_parser = sub.add_parser("run")
