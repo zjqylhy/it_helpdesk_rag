@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Contract(BaseModel):
@@ -102,6 +102,13 @@ class ChatRequest(Contract):
     session_id: str = Field(min_length=1, max_length=200)
     question: str = Field(min_length=1, max_length=8000)
     request_id: str = Field(min_length=1, max_length=200)
+
+    @field_validator("session_id", "question", "request_id")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("字段不能为空白")
+        return value
 
 
 class PublicEvent(Contract):

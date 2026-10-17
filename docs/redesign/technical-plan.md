@@ -1,6 +1,6 @@
 # 全栈重实现技术方案
 
-日期：2026-10-17。状态：已由用户确认；M1 基础代码已验证，待人工验收。对应 [需求规格](spec.md) 和 [领域与接口契约](contracts.md)。用户已确认改为全 Python 后端。本方案取代双语言目标架构及旧方案中“普通 Python 自行编排”的选择，M1 的具体实现与验证见 [实施记录](m1-implementation.md)，完整目标及新策略质量尚未验证。
+日期：2026-10-17。状态：已由用户确认；M1 已人工验收；M2 基线已实现，等待本批代码/测试验收。对应 [需求规格](spec.md) 和 [领域与接口契约](contracts.md)。用户已确认改为全 Python 后端。本方案取代双语言目标架构及旧方案中“普通 Python 自行编排”的选择，M1 的具体实现与验证见 [实施记录](m1-implementation.md)，M2 当前实现与限制见 [M2 记录](m2-implementation.md)；完整目标及新策略质量尚未验证。
 
 ## 1 从零选型与职责
 
@@ -29,8 +29,8 @@ Worker 使用 PostgreSQL 租约而非 LangGraph checkpoint 承担持久任务恢
 
 ```mermaid
 flowchart TB
-  V[待实现 Vue 功能页面与类型化客户端] --> WEB[待实现 Nginx 静态资源与API代理]
-  subgraph API[待实现 Python API 单进程]
+  V[M2已实现 Vue 功能页面与类型化客户端] --> WEB[M6待完成 Nginx 静态资源与API代理]
+  subgraph API[M2已实现 Python API 单进程]
     H[FastAPI HTTP与SSE适配] --> A[身份 权限 文档 会话与Chat用例]
     A --> AR[授权屏障 请求注册与取消]
     A -->|类型化进程内调用| LG[LangGraph 问答执行图]
@@ -48,11 +48,11 @@ flowchart TB
   PR --> DB
   NP --> MP[ModelPort 预算 重试 网关适配]
   MP --> MODEL[配置的聊天 向量 重排服务]
-  WK[待实现 独立 Python Worker进程] --> ING[解析 切片 入库用例与发布 Repository]
+  WK[M2已实现 独立 Python Worker进程] --> ING[解析 切片 入库用例与发布 Repository]
   ING --> DB
   ING -->|只读原文件| FILE
   ING --> MP
-  EV[待实现 独立评测 CLI] -->|同一编译图 受控运行上下文| LG
+  EV[M2已实现 独立评测 CLI] -->|同一编译图 受控运行上下文| LG
   EV --> ART[(保留旧资产 新建不可变实验产物)]
 ```
 
@@ -75,7 +75,7 @@ contracts/                           HTTP SSE 领域 schema 和冻结提示资�
 db/migrations/                       有版本号的 SQL 与副本验证
 ```
 
-这是目标路径，当前均不能视为已有实现。实现期可先放在单独 `rewrite/` 根目录中开发和构建，禁止 import 根目录旧源码；完成全栈和数据验收后整体替换最终入口并移除旧实现。旧代码保留在 Git，不长期维护两个生产写入者。
+这是最终目标路径，M1/M2 已在独立 `rewrite/` 根目录中实现并验证基础模块，进度以 M2 记录为准；禁止 import 根目录旧源码；完成全栈和数据验收后整体替换最终入口并移除旧实现。旧代码保留在 Git，不长期维护两个生产写入者。
 
 架构图中的 LangGraph、ModelPort 和 Repository 表示可复用代码职责。离线评测在自身进程装配同一图定义与受控依赖，不调用线上图实例，也不共享在线连接池或请求预算。
 
@@ -97,7 +97,7 @@ Python 领域层统一定义 Principal、Document、Conversation、Evidence 等�
 
 [完整目标执行流程 SVG](diagrams/target-workflow.svg) · [Mermaid 源码](diagrams/target-workflow.mmd)
 
-下图全部是待实现目标。每个框对应职责明确的节点，分支由代码校验后的枚举和预算决定；不能一个 prompt 返回整条流程的“自检成功”。完整流程采用 Mermaid/SVG 交付，保留所有条件与回边；交互布局的未通过尝试不计为已验证图表。
+下图是完整目标：M2 已实现 B0/B1 基线路径，覆盖/补查分支待 M4，草稿/检查/修正分支待 M5。当前实际编译图见 [M2](diagrams/m2-baseline.mmd)。每个框对应职责明确的节点，分支由代码校验后的枚举和预算决定；不能一个 prompt 返回整条流程的“自检成功”。完整流程采用 Mermaid/SVG 交付，保留所有条件与回边；交互布局的未通过尝试不计为已验证图表。
 
 ```mermaid
 flowchart TD
@@ -239,8 +239,8 @@ provenance 包含已咨询的范围和元数据依赖，不仅是最终引用。
 | 阶段 | 全栈产出 | 验收与停止条件 |
 | --- | --- | --- |
 | M0 已确认 | 现状架构、流程、需求、目标图与契约 | 人工确认后进入新代码；此阶段不改依赖或业务库 |
-| M1 已验证待验收 | 新 contracts、迁移、Python domain/application/repository、身份/权限/文档/会话、图端口及新Vue骨架 | 空库初始化、旧库副本升级、API权限负例、无旧源码依赖 |
-| M2 基线 | 新 Worker、解析/切片/发布、新 LangGraph B0/B1、新模型适配、评测、完整 Vue | 全部已有功能回归；API/图/独立Worker联测、浏览器、取消、撤权、版本发布与恢复 |
+| M1 已人工验收 | 新 contracts、迁移、Python domain/application/repository、身份/权限/文档/会话、图端口及新Vue骨架 | 空库初始化、旧库副本升级、API权限负例、无旧源码依赖 |
+| M2 基线已实现待验收 | 新 Worker、解析/切片/发布、新 LangGraph B0/B1、新模型适配、评测、完整 Vue | 全部已有功能回归；API/图/独立Worker联测、浏览器、取消、撤权、版本发布与恢复 |
 | M3 实验闭环 | 旧拆解结果裁决与新协议核对、锁定检索方案 | 无改善保留负结果；未付费授权不运行；新系统不继承旧分数 |
 | M4 覆盖与补查 | 新图 A1/A2、C0/B2、覆盖误判与独立题 | 单次补查、同权限同快照、选择损失不绕过；人工质量/开销验收 |
 | M5 回答检查 | 新图 A3、B3、草稿隔离、误改与首字测量 | 修正≤1、复核≤1、草稿零泄露；先锁定容忍阈值再正式测 |

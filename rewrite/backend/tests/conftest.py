@@ -9,10 +9,11 @@ import httpx
 import psycopg
 import pytest
 import pytest_asyncio
+from psycopg import sql
+
 from helpdesk.adapters.http.app import create_app
 from helpdesk.adapters.postgres.migration import migrate
 from helpdesk.settings import Settings
-from psycopg import sql
 
 REWRITE = Path(__file__).resolve().parents[2]
 ROOT = REWRITE.parent

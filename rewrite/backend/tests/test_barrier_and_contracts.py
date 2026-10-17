@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 from conftest import grant
+from pydantic import ValidationError
+
 from helpdesk.application.barrier import AuthorizationBarrier
 from helpdesk.domain.contracts import AnswerCheck, CoverageReport
-from pydantic import ValidationError
 
 
 async def test_cancelled_writer_does_not_block_future_requests():

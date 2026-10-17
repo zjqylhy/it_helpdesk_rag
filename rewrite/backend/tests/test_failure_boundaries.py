@@ -5,6 +5,7 @@ from threading import Event
 import psycopg
 import pytest
 from conftest import grant
+
 from helpdesk.adapters.files.local import LocalFiles, complete_io
 
 

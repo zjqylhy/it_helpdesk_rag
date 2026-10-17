@@ -1,10 +1,12 @@
 import asyncio
 from collections.abc import AsyncIterator
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Annotated
 from urllib.parse import quote
 
+import httpx
 import psycopg
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -15,19 +17,26 @@ from psycopg_pool import AsyncConnectionPool
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from helpdesk.adapters.files.local import LocalFiles
+from helpdesk.adapters.models.gateway import HttpModels
+from helpdesk.adapters.postgres.chat import ChatStore
+from helpdesk.adapters.postgres.corpus import PostgresCorpus
 from helpdesk.adapters.postgres.migration import API_LOCK
+from helpdesk.adapters.postgres.runs import RunLedger
 from helpdesk.adapters.postgres.uow import PostgresUnitOfWork
 from helpdesk.application.access import AccessService
 from helpdesk.application.barrier import AuthorizationBarrier
 from helpdesk.application.catalog import CatalogService
+from helpdesk.application.chat import ChatService
 from helpdesk.application.conversations import ConversationService
 from helpdesk.application.identity import IdentityService, digest_token
 from helpdesk.domain.contracts import ChatRequest
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import Principal, Row
+from helpdesk.ports.models import Models
 from helpdesk.settings import Settings
 
 from . import inputs
+from .chat_stream import ChatResponse
 
 
 @dataclass
@@ -38,6 +47,7 @@ class Services:
     access: AccessService
     catalog: CatalogService
     conversations: ConversationService
+    chat: ChatService
 
 
 class ResponseGuard:
@@ -53,7 +63,7 @@ class ResponseGuard:
         async def guarded(message: Message) -> None:
             nonlocal start
             state = scope.get("state", {})
-            if scope["type"] != "http" or "auth_revision" not in state:
+            if scope["type"] != "http" or "auth_revision" not in state or state.get("owned_sse"):
                 await send(message)
                 return
             if message["type"] == "http.response.start":
@@ -127,7 +137,7 @@ class UploadLimit:
         await self.app(scope, bounded, send)
 
 
-def create_app(settings: Settings) -> FastAPI:
+def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pool: AsyncConnectionPool[psycopg.AsyncConnection[Row]] = AsyncConnectionPool(
@@ -139,6 +149,8 @@ def create_app(settings: Settings) -> FastAPI:
             kwargs={"row_factory": dict_row, "connect_timeout": 5, "options": "-c statement_timeout=5000"},
         )
         await pool.open()
+        client = httpx.AsyncClient(timeout=25, trust_env=False, follow_redirects=False)
+        cpu = ProcessPoolExecutor(max_workers=2)
         lease = None
         try:
             await pool.wait(timeout=5)
@@ -154,10 +166,13 @@ def create_app(settings: Settings) -> FastAPI:
                 await lease.execute("SELECT max(version) AS version FROM app_migrations")
             ).fetchone()
             await lease.commit()
-            if not check or check["version"] != 2:
+            if not check or check["version"] != 3:
                 raise RuntimeError("请先显式执行数据库迁移")
             uow = PostgresUnitOfWork(pool)
             barrier = AuthorizationBarrier()
+            chat_store = ChatStore(pool)
+            await chat_store.recover()
+            provider = models or HttpModels(settings, client)
             app.state.services = Services(
                 uow,
                 barrier,
@@ -165,6 +180,16 @@ def create_app(settings: Settings) -> FastAPI:
                 AccessService(uow, barrier),
                 CatalogService(uow, LocalFiles(settings.upload_dir), barrier),
                 ConversationService(uow),
+                ChatService(
+                    uow,
+                    chat_store,
+                    PostgresCorpus(pool, settings),
+                    provider,
+                    RunLedger(pool),
+                    barrier,
+                    settings,
+                    cpu,
+                ),
             )
             yield
         finally:
@@ -172,8 +197,10 @@ def create_app(settings: Settings) -> FastAPI:
                 await lease.close()
                 await pool.putconn(lease)
             await pool.close()
+            await client.aclose()
+            await asyncio.to_thread(cpu.shutdown, wait=True, cancel_futures=True)
 
-    app = FastAPI(title="知答 Python API", version="0.1.0-m1", lifespan=lifespan)
+    app = FastAPI(title="知答 Python API", version="0.2.0-m2", lifespan=lifespan)
     app.add_middleware(ResponseGuard)
     app.add_middleware(UploadLimit)
     bearer = HTTPBearer(auto_error=False)
@@ -221,7 +248,7 @@ def create_app(settings: Settings) -> FastAPI:
     async def health(request: Request) -> Row:
         async with services(request).uow() as repos:
             await repos.access.revision()
-        return {"status": "ok", "stage": "m1", "chat_ready": False}
+        return {"status": "ok", "stage": "m2", "chat_ready": models is not None or settings.models_ready}
 
     @app.post("/api/v1/auth/login")
     async def login(body: inputs.Login, request: Request) -> Row:
@@ -350,9 +377,25 @@ def create_app(settings: Settings) -> FastAPI:
     async def messages(session_id: str, request: Request, user: User) -> list[Row]:
         return await services(request).conversations.history(user, session_id)
 
-    @app.post("/api/v1/chat", status_code=503)
-    async def chat(body: ChatRequest, user: User) -> Row:
-        raise AppError("chat_not_ready", 503, "M1 尚未接入问答流程")
+    @app.post(
+        "/api/v1/chat",
+        response_class=Response,
+        responses={
+            200: {
+                "description": "有序 SSE 业务事件",
+                "content": {"text/event-stream": {"schema": {"type": "string"}}},
+            },
+            503: {"description": "模型尚未配置"},
+        },
+    )
+    async def chat(body: ChatRequest, request: Request, user: User) -> Response:
+        if models is None and not settings.models_ready:
+            raise AppError("models_not_configured", 503, "模型服务尚未配置")
+        prepared = await services(request).chat.prepare(
+            user, request.state.token, body.session_id, body.request_id, body.question
+        )
+        request.state.owned_sse = True
+        return ChatResponse(services(request).chat, prepared)
 
     @app.get("/api/v1/admin/users")
     async def users(request: Request, user: User) -> list[Row]:

@@ -1,14 +1,16 @@
 import hashlib
+import json
 import shutil
 from pathlib import Path
 
 import psycopg
 import pytest
 from conftest import MIGRATIONS
+from psycopg import sql
+
 from helpdesk.adapters.http.app import create_app
 from helpdesk.adapters.postgres.migration import migrate
 from helpdesk.settings import Settings
-from psycopg import sql
 
 
 def test_migration_is_atomic_idempotent_and_checksum_locked(database, tmp_path):
@@ -20,14 +22,14 @@ def test_migration_is_atomic_idempotent_and_checksum_locked(database, tmp_path):
     with pytest.raises(RuntimeError, match="校验和"):
         migrate(database, changed)
     (changed / "0001_foundation.sql").write_bytes((MIGRATIONS / "0001_foundation.sql").read_bytes())
-    (changed / "0003_invalid.sql").write_text(
+    (changed / "0004_invalid.sql").write_text(
         "CREATE TABLE must_rollback(id int); SELECT non_existing_column;", encoding="utf-8"
     )
     with pytest.raises(psycopg.Error):
         migrate(database, changed)
     with psycopg.connect(database) as conn:
         assert conn.execute("SELECT to_regclass('must_rollback')").fetchone()[0] is None
-        assert conn.execute("SELECT max(version) FROM app_migrations").fetchone()[0] == 2
+        assert conn.execute("SELECT max(version) FROM app_migrations").fetchone()[0] == 3
 
 
 def test_legacy_schema_upgrade_preserves_data_and_vectors(empty_database):
@@ -65,15 +67,19 @@ def test_legacy_schema_upgrade_preserves_data_and_vectors(empty_database):
                 "messages",
             ]
         }
-    assert migrate(empty_database, MIGRATIONS) == [1, 2]
+    assert migrate(empty_database, MIGRATIONS) == [1, 2, 3]
     with psycopg.connect(empty_database) as conn:
         for table, rows in before.items():
-            assert (
-                conn.execute(
-                    sql.SQL("SELECT row_to_json(t)::text FROM {} t ORDER BY id").format(sql.Identifier(table))
-                ).fetchall()
-                == rows
-            )
+            after = conn.execute(
+                sql.SQL("SELECT row_to_json(t)::text FROM {} t ORDER BY id").format(sql.Identifier(table))
+            ).fetchall()
+            assert len(after) == len(rows)
+            for before_row, after_row in zip(rows, after, strict=True):
+                old, new = json.loads(before_row[0]), json.loads(after_row[0])
+                assert {key: new[key] for key in old} == old
+                assert set(new) - set(old) == ({"completion_kind"} if table == "messages" else set())
+                if table == "messages":
+                    assert new["completion_kind"] is None
         row = conn.execute(
             "SELECT path,content_hash,storage_key FROM document_versions WHERE id='old-version'"
         ).fetchone()

@@ -4,6 +4,7 @@ from typing import Protocol
 
 from helpdesk.domain.contracts import PublicEvent
 from helpdesk.domain.models import Principal, Row
+from helpdesk.domain.rag import BoundScope
 
 
 @dataclass(frozen=True)
@@ -21,4 +22,20 @@ class ChatRunInput:
 
 
 class ChatRunner(Protocol):
-    def events(self, run: ChatRunInput) -> AsyncIterator[PublicEvent]: ...
+    def events(self) -> AsyncIterator[PublicEvent]: ...
+
+
+class ChatPersistence(Protocol):
+    async def prepare(
+        self,
+        principal: Principal,
+        session_id: str,
+        request_id: str,
+        question: str,
+        scope: BoundScope,
+        strategy: str,
+    ) -> tuple[Row, list[Row]]: ...
+    async def finish(
+        self, message_id: str, status: str, answer: str, citations: list[Row], trace: Row
+    ) -> None: ...
+    async def abort(self, message_id: str, status: str, reason: str) -> None: ...

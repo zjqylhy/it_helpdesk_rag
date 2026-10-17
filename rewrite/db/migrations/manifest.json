@@ -1,4 +1,5 @@
 {
   "0001_foundation.sql": "2a7e904158d5a3d560f9efbfe658644f0f560f4646d47c3c1469f51b598408a1",
-  "0002_storage_and_runs.sql": "81a18080d1f13ca5137cc2fe9715d3e64e1ec115e8fa321fbc86a1661088b7ee"
+  "0002_storage_and_runs.sql": "81a18080d1f13ca5137cc2fe9715d3e64e1ec115e8fa321fbc86a1661088b7ee",
+  "0003_ingestion_and_runtime.sql": "45537357d3a3a7dc594c2de3c2d79eccbfe7ae3bbf7555bc47578162b016ea07"
 }

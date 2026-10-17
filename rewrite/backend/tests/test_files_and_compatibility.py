@@ -4,6 +4,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+
 from helpdesk.adapters.files.local import LocalFiles
 from helpdesk.domain.errors import AppError
 from helpdesk.entrypoints.map_files import map_files

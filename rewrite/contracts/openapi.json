@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "知答 Python API",
-    "version": "0.1.0-m1"
+    "version": "0.2.0-m2"
   },
   "paths": {
     "/health": {
@@ -735,15 +735,18 @@
           "required": true
         },
         "responses": {
-          "503": {
-            "description": "Successful Response",
+          "200": {
+            "description": "有序 SSE 业务事件",
             "content": {
-              "application/json": {
+              "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/Row"
+                  "type": "string"
                 }
               }
             }
+          },
+          "503": {
+            "description": "模型尚未配置"
           },
           "422": {
             "description": "Validation Error",

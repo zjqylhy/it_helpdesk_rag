@@ -15,6 +15,7 @@ from psycopg import sql
 
 from helpdesk.adapters.postgres.migration import migrate
 from helpdesk.entrypoints.admin import bootstrap
+from mock_models import start as start_models
 
 ROOT=Path(__file__).resolve().parents[2]
 REWRITE=ROOT/'rewrite'
@@ -51,6 +52,7 @@ def main():
     flags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0
     processes=[]
     logs=[]
+    models=start_models()
     try:
         migrate(dsn,REWRITE/'db/migrations')
         if sys.platform=='win32':
@@ -61,9 +63,14 @@ def main():
         env.update(HD_DATABASE_URL=dsn,HD_UPLOAD_DIR=str(output/'uploads'),HD_PORT=str(api_port),
                    HD_API_TARGET=f'http://127.0.0.1:{api_port}',HD_WEB_TARGET=f'http://127.0.0.1:{web_port}',
                    HD_QA_ARTIFACTS=str(output),PYTHONIOENCODING='utf-8')
+        model_url=f'http://127.0.0.1:{models.server_port}'
+        env.update(HD_CHAT_URL=model_url+'/chat', HD_EMBEDDING_URL=model_url+'/embed',HD_RERANK_URL=model_url+'/rank',
+                   HD_CHAT_MODEL='fixture-chat',HD_EMBEDDING_MODEL='fixture-embed',HD_RERANK_MODEL='fixture-rank',
+                   HD_RERANK_FORMAT='generic',HD_EMBEDDING_DIMENSION='3')
         for label,command,cwd in [
             ('api',[sys.executable,'-m','helpdesk.entrypoints.api'],REWRITE/'backend'),
-            ('web',['node',str(REWRITE/'frontend/node_modules/vite/bin/vite.js'),'--host','127.0.0.1','--port',str(web_port),'--strictPort'],REWRITE/'frontend')]:
+            ('web',['node',str(REWRITE/'frontend/node_modules/vite/bin/vite.js'),'--host','127.0.0.1','--port',str(web_port),'--strictPort'],REWRITE/'frontend'),
+            ('worker',[sys.executable,'-m','helpdesk.entrypoints.worker'],REWRITE/'backend')]:
             log=(output/(label+'.log')).open('wb');logs.append(log)
             processes.append(subprocess.Popen(command,cwd=cwd,env=env,creationflags=flags,stdout=log,stderr=log))
         wait(env['HD_API_TARGET']+'/health',processes[0]);wait(env['HD_WEB_TARGET'],processes[1])
@@ -77,13 +84,21 @@ def main():
                 if title=='公开知识库':
                     client.put('/api/v1/admin/documents/'+doc['document_id']+'/access',headers=headers,
                                json={'visibility':'all_users','group_ids':[]}).raise_for_status()
+            for _ in range(100):
+                with psycopg.connect(dsn) as conn:
+                    statuses=[row[0] for row in conn.execute('SELECT status FROM ingestion_jobs').fetchall()]
+                if statuses==['completed','completed']: break
+                if 'failed' in statuses: raise RuntimeError('独立 Worker 入库失败')
+                time.sleep(.2)
+            else: raise RuntimeError('独立 Worker 入库超时')
         result=subprocess.run(['node',str(REWRITE/'scripts/browser_check.mjs')],env=env,cwd=ROOT,
-                              creationflags=flags,capture_output=True,text=True,encoding='utf-8',timeout=90)
+                              creationflags=flags,capture_output=True,text=True,encoding='utf-8',timeout=180)
         (output/'browser.log').write_text(result.stdout+result.stderr,encoding='utf-8')
         if result.returncode:
             raise RuntimeError('浏览器验收失败，请查看 data/rewrite-m1-qa/browser.log')
         print(result.stdout.strip())
     finally:
+        models.shutdown();models.server_close()
         for process in reversed(processes):
             process.terminate();process.wait(timeout=10)
         for log in logs:

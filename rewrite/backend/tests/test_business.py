@@ -4,6 +4,7 @@ import hashlib
 import psycopg
 import pytest
 from conftest import grant
+
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import MessageStatus
 
@@ -260,7 +261,7 @@ async def test_request_schema_and_chat_not_ready(client, admin):
     result = await client.post(
         "/api/v1/chat", headers=admin, json={"session_id": "x", "request_id": "x", "question": "问题"}
     )
-    assert result.status_code == 503 and result.json()["code"] == "chat_not_ready"
+    assert result.status_code == 503 and result.json()["code"] == "models_not_configured"
     result = await client.post(
         "/api/v1/chat",
         headers=admin,

@@ -97,9 +97,15 @@ class Catalog(Queries):
         return {"document_id": document_id, "version_id": version_id, "job_id": job_id, "status": "queued"}
 
     async def set_enabled(self, document_id: str, enabled: bool) -> Row:
-        return await self.require(
+        from .publication import refresh_snapshot
+
+        document = await self.require("SELECT kb_id FROM documents WHERE id=%s", (document_id,))
+        await self.require("SELECT id FROM knowledge_bases WHERE id=%s FOR UPDATE", (document["kb_id"],))
+        row = await self.require(
             "UPDATE documents SET enabled=%s WHERE id=%s RETURNING *", (enabled, document_id)
         )
+        await refresh_snapshot(self.conn, document["kb_id"])
+        return row
 
     async def retry(self, job_id: str) -> Row:
         row = await self.require("SELECT * FROM ingestion_jobs WHERE id=%s FOR UPDATE", (job_id,))

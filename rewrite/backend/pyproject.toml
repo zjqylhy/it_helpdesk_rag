@@ -1,10 +1,21 @@
 [project]
 name = "helpdesk-backend"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-  "fastapi>=0.143,<0.144", "uvicorn>=0.36,<1", "pydantic-settings>=2.8,<3",
-  "psycopg[binary,pool]>=3.3,<4", "bcrypt>=4,<6", "python-multipart>=0.0.20,<1",
+  "fastapi>=0.143,<0.144",
+  "uvicorn>=0.36,<1",
+  "pydantic-settings>=2.8,<3",
+  "psycopg[binary,pool]>=3.3,<4",
+  "bcrypt>=4,<6",
+  "python-multipart>=0.0.20,<1",
+  "langgraph==1.2.10",
+  "httpx>=0.28,<1",
+  "pypdf>=5,<7",
+  "python-docx>=1.1,<2",
+  "jieba>=0.42.1,<1",
+  "rank-bm25>=0.2.2,<1",
+  "pgvector>=0.4,<1",
 ]
 
 [dependency-groups]
@@ -15,6 +26,8 @@ helpdesk-api = "helpdesk.entrypoints.api:main"
 helpdesk-migrate = "helpdesk.entrypoints.migrate:main"
 helpdesk-admin = "helpdesk.entrypoints.admin:main"
 helpdesk-map-files = "helpdesk.entrypoints.map_files:main"
+helpdesk-worker = "helpdesk.entrypoints.worker:main"
+helpdesk-eval = "helpdesk.entrypoints.evaluate:main"
 
 [build-system]
 requires = ["hatchling"]
