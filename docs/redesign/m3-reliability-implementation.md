@@ -1,6 +1,6 @@
 # M3 限流与观测修复交付记录
 
-日期：2026-10-17。需求及 [修复方案](m3-reliability-spec.md) 已由用户确认并授权编码、服务器零模型调用验证。实现和服务器自动验证已完成，当前待候选部署核对及代码/测试人工验收。此轮不包含真实重跑或新的效果结论。
+日期：2026-10-17。需求及 [修复方案](m3-reliability-spec.md) 已由用户确认并授权编码、服务器零模型调用验证。代码 `cb413c98c50c3dd1cf254752478eab0de2ac7193` 已部署到服务器隔离候选环境，自动验证与部署核对完成，待代码/测试人工验收。此轮不包含真实重跑或新的效果结论。
 
 ## 已实现
 
@@ -43,7 +43,25 @@ python -m helpdesk.entrypoints.evaluate run /artifacts/NEW_DIRECTORY
 
 此前曾对工作快照运行针对性测试（53 passed）；该结果由上述最终完整回归替代。中途被最终快照替代的旧回归经 SIGINT 停止，不记为最终通过结果。全部业务验证在服务器完成，本地仅编辑、归档传输和 Git 操作；测试容器没有真实模型凭据，HTTP 故障由 MockTransport/FakeModels 产生。
 
-服务器证据目录：`/opt/it-helpdesk-rag-rewrite-m3/artifacts/reliability-20261017/`。候选部署、镜像身份和零调用冻结核对在后续交付记录补齐；原 dev 批次、来源审批及其答案/人工待审状态保持原样。
+## 候选部署与交付证据
+
+服务器证据目录：`/opt/it-helpdesk-rag-rewrite-m3/artifacts/reliability-20261017/`。API、Worker 和 Web 均运行代码版本 `cb413c9`；API/Worker 的 `HD_MODEL_INFERENCE_ENABLED=false`。候选健康检查通过且 `chat_ready=false`，原生产四个服务健康，未切换正式入口。
+
+| 核对项 | 结果 |
+| --- | --- |
+| API/Worker 镜像 | `sha256:615286af8d7c5aa707d92308bbdfe831b5dba3059f4242bcc4ce4d8b8191578a` |
+| Web 镜像 | `sha256:6bc7ef2f3e5c714d4df7ec4e77692d206758179df232f9dfc6fe677ad33e517a` |
+| 源码对应关系 | 最终受测的 94 份源码/测试/验证文件与提交归档一致；运行镜像的 77 份源码/迁移文件与部署清单一致 |
+| 新协议零调用核对 | 使用原已批准来源冻结 dev 10 题、20 条计划；`rewrite-eval-v2` 校验通过，模型请求 0，推理关闭，未创建执行标记或调度数据库 |
+| 原实验保护 | 仍为 59 次请求；原交付清单中的文件哈希全部一致，答案及人工待审状态未改动 |
+| 候选数据库 | 授权版本 28，API 模型尝试数 0，已完成入库任务 11 |
+| 本轮新增真实推理 | **0 次** |
+
+零调用冻结目录仅用于协议验证，标记 `paid_execution_authorized=false`，不得用它直接启动下一轮真实实验。调度配置哈希为 `3fea036a7bb42e5c07363272794e71cbbe1a792a179392fda46786f2b48cd54f`；来源仍绑定原已批准包，配置和旧价目只用于本轮冻结验证，不构成新预算。
+
+本地忽略目录中的证据副本：[部署核对](../../reports/rewrite-m3-reliability/reliability-20261017/delivery-validation.json)、[最终测试日志](../../reports/rewrite-m3-reliability/reliability-20261017/final-pytest.log)、[证据清单](../../reports/rewrite-m3-reliability/reliability-20261017/delivery-manifest.json)。证据包含私有题目及语料，仅保存在受限服务器与本地忽略目录，不提交 Git。
+
+证据归档 `reliability-evidence-cb413c9.tar.gz` 的 SHA256 为 `08e6015a18de1270986cdde0ec4d3f249bded36d0ccb5c247bdc7b7d960f9537`；归档内交付清单 SHA256 为 `f927384bf212027ef1079a94a1a581bb6c123576ecdd78af898fbb0e532120db`。
 
 ## 后续门禁
 
