@@ -1,6 +1,6 @@
 # M3 服务器评测主体与来源重新绑定
 
-状态：用户已验收 `3f69c2a`，并授权继续准备服务器评测主体和来源重新绑定。以下为本批规格及实现记录；真实推理、来源新审批和费用授权仍分开处理。
+状态：用户已验收本批 `e2450bc`，并明确回复“验收并确认来源包”，批准下述哈希对应的整个包。真实推理与费用授权仍单独处理。以下保留本批规格、交付时状态及后续审批记录。
 
 ## 范围与约束
 
@@ -57,8 +57,16 @@ python -m helpdesk.entrypoints.rebind provision /input --username m3-eval-202610
 python -m helpdesk.entrypoints.rebind prepare /input --out /artifacts/NEW_REVIEW_PACKET
 ```
 
-审核包 `review-packet.json` 绑定全集/dev/test、来源、映射和实验提案的完整文件哈希。原事实审核记录保留在题目来源中，服务器重新绑定标记为 pending_review。本次尚未创建新来源审批文件，也未创建正式实验冻结目录。
+审核包 `review-packet.json` 绑定全集/dev/test、来源、映射和实验提案的完整文件哈希。原事实审核记录保留在题目来源中，服务器重新绑定标记为 pending_review。`e2450bc` 交付时尚未创建新来源审批文件，也未创建正式实验冻结目录。
 
 只有人工明确确认该包后，才记录独立的 `rewrite-rebind-approval-v1` 文件：包含实际 packet_hash、`confirmed=true`、审核人和确认时间。冻结命令需同时提供 `--source-corpus` 和 `--rebind-approval`，并将审批及审核包副本保存到实验目录。
 
-来源确认不包含付费授权。提案仍为 dev 10 题、两组 D 变体、seed 12、20 个输出，HTTP 上限提议 150，judge 0。4 道 dev 的预留包络可能超过默认 48000，最大估算 61851；没有提高运行限额。模型实际路由、价格和可运行预算仍待单独确认。
+来源确认不包含付费授权。交付时的提案为 dev 10 题、两组 D 变体、seed 12、20 个输出，HTTP 上限提议 150，judge 0。4 道 dev 的预留包络可能超过默认 48000，最大估算 61851；当时没有提高运行限额，模型实际路由、价格和可运行预算尚未核对。后续进展见下节及独立预算提案。
+
+## 用户确认后的复核
+
+2026-10-17 收到用户对 `e2450bc` 及来源包的明确确认后，服务器独立保存 `artifacts/rebind-approval-20261017.json`，权限 600。记录确认原话、会话问题引用、接受的代码提交、完整 packet_hash，并明确 `paid_execution_authorized=false`。审批文件 SHA256 为 `ccf5a648e1181b9aefcbfc58b1e7f44ea24c280c53f7f0febb0bb2661b34479c`；原审核包及题目内的 pending_review 标记保持原字节，由外部审批文件提供后续确认。
+
+服务器使用该审批文件通过门禁，对 40/40 题重新核对当前普通主体、revision 28、授权范围、版本/快照、原文与向量哈希、黄金出处；仍为 7 库、9 版本、649 分块。三类模型配置的 Key 指纹均匹配网关 `it_helpdesk_rag` 应用，经过原 CA 和隧道的 GET `/v1/models` 返回 200。未创建正式实验目录，推理关闭，模型尝试记录仍为 0。
+
+路由、实时官方价目和下一步预算见 [模型与预算准备](m3-model-budget.md)。本轮没有修改产品代码或重新部署运行镜像。
