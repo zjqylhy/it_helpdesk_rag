@@ -2,11 +2,11 @@ import asyncio
 import hashlib
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.resources import files
-from typing import Any, TypedDict
+from typing import Any, Protocol, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
@@ -14,6 +14,7 @@ from langsmith import tracing_context
 
 from helpdesk.application.model_session import ModelSession
 from helpdesk.application.retrieval import bm25_order, citation_indices, round_robin, rrf, select_context
+from helpdesk.application.trace import TraceObserver
 from helpdesk.domain.contracts import PublicEvent
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import Row
@@ -60,6 +61,7 @@ class Context:
     cpu: ProcessPoolExecutor
     cpu_slots: asyncio.Semaphore
     retrieval_variant: str = "D"
+    observer: TraceObserver = field(default_factory=TraceObserver)
 
 
 def emit(runtime: Runtime[Context], event: str, data: Row) -> None:
@@ -361,6 +363,23 @@ async def finalize(state: State, runtime: Runtime[Context]) -> State:
     }
 
 
+class GraphNode(Protocol):
+    def __call__(self, state: State, *, runtime: Runtime[Context]) -> Awaitable[State]: ...
+
+
+def observed_node(name: str, node: Callable[[State, Runtime[Context]], Awaitable[State]]) -> GraphNode:
+    async def invoke(state: State, *, runtime: Runtime[Context]) -> State:
+        observer = runtime.context.observer
+        observer.enter(name)
+        try:
+            return await node(state, runtime)
+        except BaseException:
+            observer.fail(name)
+            raise
+
+    return invoke
+
+
 def build_graph() -> Any:
     graph = StateGraph(State, context_schema=Context)
     nodes = {
@@ -378,7 +397,7 @@ def build_graph() -> Any:
         "finalize": finalize,
     }
     for name, node in nodes.items():
-        graph.add_node(name, node)
+        graph.add_node(name, observed_node(name, node))
     graph.add_edge(START, "admit")
     graph.add_edge("admit", "resolve_scope")
     graph.add_conditional_edges(
@@ -414,6 +433,9 @@ class GraphRunner:
         self.context = context
         self.outcome: Outcome | None = None
 
+    def diagnostics(self) -> Row:
+        return self.context.observer.snapshot(self.context.models.attempt_details)
+
     async def events(self) -> AsyncIterator[PublicEvent]:
         seq = 0
         with tracing_context(enabled=False):
@@ -423,8 +445,12 @@ class GraphRunner:
                 config={"recursion_limit": 48, "callbacks": []},
                 stream_mode=["custom", "updates"],
             ):
-                if mode == "updates" and "finalize" in part:
-                    self.outcome = part["finalize"]["outcome"]
+                if mode == "updates":
+                    for name, update in part.items():
+                        if isinstance(update, dict) and name in self.context.observer.nodes:
+                            self.context.observer.update(name, update)
+                    if "finalize" in part:
+                        self.outcome = part["finalize"]["outcome"]
                 elif mode == "custom":
                     seq += 1
                     yield PublicEvent(

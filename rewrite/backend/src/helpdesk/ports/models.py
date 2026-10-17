@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Protocol
 
 from helpdesk.domain.models import Row
@@ -13,8 +13,16 @@ class Models(Protocol):
 
 
 class AttemptLedger(Protocol):
+    async def check_attempt(self, reserved: int) -> None: ...
     async def start_attempt(self, run_id: str, stage: str, reserved: int) -> str: ...
     async def end_attempt(self, attempt_id: str, status: str, usage: Usage) -> None: ...
+
+
+class ModelAdmission(Protocol):
+    async def acquire(
+        self, kind: str, units: int, deadline: float, guard: Callable[[], Awaitable[None]]
+    ) -> float: ...
+    async def cool_down(self, kind: str, seconds: float) -> None: ...
 
 
 class RunJournal(AttemptLedger, Protocol):

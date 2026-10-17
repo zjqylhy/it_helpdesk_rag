@@ -166,6 +166,11 @@ class ExperimentLedger:
     def close(self) -> None:
         self.conn.close()
 
+    async def check_attempt(self, reserved: int) -> None:
+        count, used = self.conn.execute("SELECT count(*),COALESCE(sum(reserved),0) FROM attempts").fetchone()
+        if count >= self.max_calls or used + reserved > self.limit:
+            raise AppError("experiment_budget_exhausted", 429, "全实验预算耗尽，禁止继续调用")
+
     async def start_attempt(self, run_id: str, stage: str, reserved: int) -> str:
         with self.conn:
             self.conn.execute("BEGIN IMMEDIATE")
@@ -197,14 +202,17 @@ class ExperimentLedger:
         return [json.loads(row[0]) for row in self.conn.execute("SELECT payload FROM results ORDER BY rowid")]
 
     def summary(self) -> Row:
-        count, incoming, outgoing, unknown = (
+        count, incoming, outgoing, unknown, missing_in, missing_out = (
             self.conn.execute("""SELECT count(*),sum(input_tokens),sum(output_tokens),
-            COALESCE(sum(input_tokens IS NULL OR output_tokens IS NULL),0) FROM attempts""").fetchone()
+            COALESCE(sum(input_tokens IS NULL OR output_tokens IS NULL),0),
+            COALESCE(sum(input_tokens IS NULL),0),COALESCE(sum(output_tokens IS NULL),0) FROM attempts""").fetchone()
         )
         return {
             "calls": count,
-            "input_tokens": incoming if not unknown else None,
-            "output_tokens": outgoing if not unknown else None,
+            "input_tokens": incoming if not missing_in else None,
+            "output_tokens": outgoing if not missing_out else None,
+            "known_input_tokens": incoming or 0,
+            "known_output_tokens": outgoing or 0,
             "unknown_usage_calls": unknown,
             "reserved_token_estimate": self.conn.execute(
                 "SELECT COALESCE(sum(reserved),0) FROM attempts"
@@ -217,7 +225,8 @@ class ExperimentLedger:
         placeholders = ",".join("?" for _ in keys)
         rows = self.conn.execute(
             f"""SELECT stage,count(*),sum(input_tokens),sum(output_tokens),
-            sum(input_tokens IS NULL OR output_tokens IS NULL),sum(reserved)
+            sum(input_tokens IS NULL OR output_tokens IS NULL),sum(reserved),
+            sum(input_tokens IS NULL),sum(output_tokens IS NULL)
             FROM attempts WHERE run_id IN ({placeholders}) GROUP BY stage ORDER BY stage""",
             keys,
         ).fetchall()
@@ -227,8 +236,11 @@ class ExperimentLedger:
                 {
                     "stage": r[0],
                     "calls": r[1],
-                    "input_tokens": r[2] if not r[4] else None,
-                    "output_tokens": r[3] if not r[4] else None,
+                    "input_tokens": r[2] if not r[6] else None,
+                    "output_tokens": r[3] if not r[7] else None,
+                    "known_input_tokens": r[2] or 0,
+                    "known_output_tokens": r[3] or 0,
+                    "output_applicable": r[0] not in {"embedding", "rerank"},
                     "unknown_usage_calls": r[4],
                     "reserved_token_estimate": r[5],
                 }

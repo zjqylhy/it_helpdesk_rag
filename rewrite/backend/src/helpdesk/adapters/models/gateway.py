@@ -1,31 +1,80 @@
 import json
 import math
+import re
+import time
 from collections.abc import AsyncIterator
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 
 import httpx
 
-from helpdesk.application.model_session import TransientModelError
+from helpdesk.application.model_session import RateLimitedModelError, TransientModelError
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import Row
 from helpdesk.domain.rag import Reply, TextDelta, Usage
 from helpdesk.settings import Settings
 
 
-def provider_error() -> AppError:
-    return AppError("invalid_provider_response", 502, "模型响应格式无效")
+class ProviderResponseError(AppError):
+    def __init__(self, known_usage: Usage | None) -> None:
+        super().__init__("invalid_provider_response", 502, "模型响应格式无效")
+        self.known_usage = known_usage
 
 
-def usage(value: object) -> Usage:
+def provider_error(known_usage: Usage | None = None) -> AppError:
+    return ProviderResponseError(known_usage)
+
+
+def usage(value: object, *, input_only: bool = False) -> Usage:
     if not isinstance(value, dict):
-        return Usage()
+        return Usage(
+            output_tokens=0 if input_only else None,
+            output_applicable=not input_only,
+            output_source="not_applicable" if input_only else None,
+        )
     incoming = value.get("prompt_tokens", value.get("input_tokens"))
     outgoing = value.get("completion_tokens", value.get("output_tokens"))
 
     def valid(x: object) -> int | None:
         return x if type(x) is int and 0 <= x < 2**31 else None
 
-    return Usage(valid(incoming), valid(outgoing))
+    input_source = "prompt_tokens" if "prompt_tokens" in value else "input_tokens"
+    if incoming is None and input_only:
+        incoming, input_source = value.get("total_tokens"), "total_tokens_input_only"
+    raw_output = valid(outgoing)
+    return Usage(
+        valid(incoming),
+        raw_output if raw_output is not None else 0 if input_only else None,
+        output_applicable=not input_only,
+        input_source=input_source if valid(incoming) is not None else None,
+        output_source=("completion_tokens" if "completion_tokens" in value else "output_tokens")
+        if raw_output is not None
+        else "not_applicable"
+        if input_only
+        else None,
+        raw_output_tokens=raw_output,
+    )
+
+
+def response_error(response: httpx.Response) -> AppError:
+    request_id = response.headers.get("x-request-id", "")
+    safe_id = request_id if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", request_id) else None
+    if response.status_code == 429:
+        raw = response.headers.get("retry-after", "").strip()
+        seconds, source = 60.0, "fallback"
+        if re.fullmatch(r"[0-9]{1,128}", raw):
+            seconds, source = float(raw), "seconds"
+        elif len(raw) <= 128:
+            try:
+                date = parsedate_to_datetime(raw)
+                if date.tzinfo is not None:
+                    seconds, source = max(0.0, date.timestamp() - time.time()), "http_date"
+            except (ValueError, TypeError, OverflowError):
+                pass
+        return RateLimitedModelError(seconds, source, safe_id)
+    if response.status_code in {500, 502, 503, 504}:
+        return TransientModelError(response.status_code, safe_id)
+    return AppError("provider_error", 502, "模型服务请求失败")
 
 
 async def bounded_lines(response: httpx.Response) -> AsyncIterator[str]:
@@ -90,11 +139,11 @@ class HttpModels:
             raise AppError("models_not_configured", 503, "模型服务尚未配置")
         try:
             url, headers, extensions = self.target(kind)
-            async with self.client.stream("POST", url, json=payload, headers=headers, extensions=extensions) as response:
-                if response.status_code in {429, 500, 502, 503, 504}:
-                    raise TransientModelError()
+            async with self.client.stream(
+                "POST", url, json=payload, headers=headers, extensions=extensions
+            ) as response:
                 if not response.is_success:
-                    raise AppError("provider_error", 502, "模型服务请求失败")
+                    raise response_error(response)
                 raw = bytearray()
                 async for block in response.aiter_bytes(chunk_size=65536):
                     raw.extend(block)
@@ -126,16 +175,17 @@ class HttpModels:
         body = self.chat_payload(system + "\n仅返回 JSON 对象。", payload, limit)
         body["response_format"] = {"type": "json_object"}
         result = await self.post("chat", body)
+        known = usage(result.get("usage"))
         try:
             choice = result["choices"][0]
             if choice.get("finish_reason") != "stop":
-                raise provider_error()
+                raise provider_error(known)
             value = json.loads(choice["message"]["content"])
             if not isinstance(value, dict):
-                raise provider_error()
+                raise provider_error(known)
         except (KeyError, IndexError, TypeError, ValueError) as error:
-            raise provider_error() from error
-        return Reply(value, usage(result.get("usage")))
+            raise provider_error(known) from error
+        return Reply(value, known)
 
     async def embed(self, texts: list[str]) -> tuple[list[list[float]], Usage]:
         result = await self.post(
@@ -147,12 +197,13 @@ class HttpModels:
                 "encoding_format": "float",
             },
         )
+        known = usage(result.get("usage"), input_only=True)
         try:
             rows = sorted(result["data"], key=lambda x: x["index"])
             if [r["index"] for r in rows] != list(range(len(texts))) or any(
                 type(r["index"]) is not int for r in rows
             ):
-                raise provider_error()
+                raise provider_error(known)
             vectors = [r["embedding"] for r in rows]
             for vector in vectors:
                 if (
@@ -160,10 +211,10 @@ class HttpModels:
                     or not all(type(x) in {int, float} and math.isfinite(x) for x in vector)
                     or not any(vector)
                 ):
-                    raise provider_error()
-            return vectors, usage(result.get("usage"))
+                    raise provider_error(known)
+            return vectors, known
         except (KeyError, TypeError, ValueError) as error:
-            raise provider_error() from error
+            raise provider_error(known) from error
 
     async def rank(self, query: str, texts: list[str]) -> tuple[list[int], Usage]:
         body: Row
@@ -184,21 +235,22 @@ class HttpModels:
         else:
             raise ValueError("未知重排协议")
         result = await self.post("rerank", body)
+        known = usage(result.get("usage"), input_only=True)
         try:
             rows = result["output"]["results"] if self.settings.rerank_format == "qwen" else result["results"]
             indices = [r["index"] for r in rows]
             if sorted(indices) != list(range(len(texts))) or any(type(i) is not int for i in indices):
-                raise provider_error()
+                raise provider_error(known)
             if any(
                 type(row.get("relevance_score")) not in {int, float}
                 or not math.isfinite(row["relevance_score"])
                 for row in rows
             ):
-                raise provider_error()
+                raise provider_error(known)
             indices = [row["index"] for row in sorted(rows, key=lambda row: -row["relevance_score"])]
         except (KeyError, TypeError, ValueError) as error:
-            raise provider_error() from error
-        return indices, usage(result.get("usage"))
+            raise provider_error(known) from error
+        return indices, known
 
     async def generate(self, system: str, payload: Row, limit: int) -> AsyncIterator[TextDelta]:
         if not self.settings.model_inference_enabled:
@@ -209,9 +261,11 @@ class HttpModels:
             raise AppError("models_not_configured", 503, "模型服务尚未配置")
         try:
             url, headers, extensions = self.target("chat")
-            async with self.client.stream("POST", url, json=body, headers=headers, extensions=extensions) as response:
+            async with self.client.stream(
+                "POST", url, json=body, headers=headers, extensions=extensions
+            ) as response:
                 if not response.is_success:
-                    raise AppError("provider_error", 502, "模型流请求失败")
+                    raise response_error(response)
                 data: list[str] = []
                 size = 0
                 async for line in bounded_lines(response):

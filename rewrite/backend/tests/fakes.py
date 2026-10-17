@@ -3,6 +3,31 @@ import asyncio
 from helpdesk.domain.rag import Reply, TextDelta, Usage
 
 
+def rate_profile(settings, rpm=1000000, units=10**9):
+    from helpdesk.domain.rag import fingerprint
+
+    return {
+        "schema": "rewrite-rate-profile-v1",
+        "gateway_version": 1,
+        "endpoints_hash": fingerprint([settings.chat_url, settings.embedding_url, settings.rerank_url]),
+        "routes": {
+            kind: {
+                "quota_key": kind,
+                "provider_id": kind,
+                "model_id": getattr(settings, kind + "_model"),
+                "upstream": getattr(settings, kind + "_model"),
+                "request_model": getattr(settings, kind + "_request_model")
+                or getattr(settings, kind + "_model"),
+                "candidate_count": 1,
+                "gray_percent": 0,
+                "rpm": rpm,
+                "units_per_minute": units,
+            }
+            for kind in ("chat", "embedding", "rerank")
+        },
+    }
+
+
 class FakeModels:
     def __init__(self):
         self.calls = []

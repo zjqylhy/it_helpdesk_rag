@@ -119,7 +119,15 @@ class ChatResponse(Response):
                             await service.guard(prepared)
                             await service.store.finish(key, item.status, item.answer, item.citations, summary)
                             await service.ledger.finish_run(
-                                prepared.run_id, item.status, {**item.trace, **summary}
+                                prepared.run_id,
+                                item.status,
+                                {
+                                    **item.trace,
+                                    **summary,
+                                    **runner.diagnostics(),
+                                    "usage": runner.context.models.summary(),
+                                    "attempt_details": runner.context.models.attempt_details,
+                                },
                             )
                         await frame(
                             "done",
@@ -156,7 +164,16 @@ class ChatResponse(Response):
                     async with asyncio.timeout(5):
                         await asyncio.shield(service.store.abort(key, status, code))
                         await asyncio.shield(
-                            service.ledger.finish_run(prepared.run_id, status, {"stop_reason": code})
+                            service.ledger.finish_run(
+                                prepared.run_id,
+                                status,
+                                {
+                                    "stop_reason": code,
+                                    **runner.diagnostics(),
+                                    "usage": runner.context.models.summary(),
+                                    "attempt_details": runner.context.models.attempt_details,
+                                },
+                            )
                         )
                     await frame(
                         "error", {"code": code, "message": "回答未完成，请刷新会话后重试"}, guard=False

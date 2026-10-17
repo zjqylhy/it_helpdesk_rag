@@ -11,6 +11,10 @@ class RunLedger:
     def __init__(self, pool: AsyncConnectionPool[psycopg.AsyncConnection[Row]]) -> None:
         self.pool = pool
 
+    async def check_attempt(self, reserved: int) -> None:
+        # 在线调用使用请求级 Budget；全实验限制仅由独立评测账本负责。
+        return None
+
     async def start_run(self, message_id: str | None, manifest: Row) -> str:
         run_id = new_id()
         async with self.pool.connection() as conn:

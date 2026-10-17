@@ -21,6 +21,8 @@ from helpdesk.adapters.models.gateway import HttpModels
 from helpdesk.adapters.postgres.corpus import PostgresCorpus
 from helpdesk.adapters.postgres.uow import PostgresUnitOfWork
 from helpdesk.application.adjudication import adjudicate
+from helpdesk.application.eval_metrics import coverage_metrics, retrieval_summary
+from helpdesk.application.eval_reporting import fee_summary, paired_retrieval, validate_prices
 from helpdesk.application.evaluation import (
     EvalCase,
     ExperimentLedger,
@@ -30,13 +32,13 @@ from helpdesk.application.evaluation import (
     load_cases,
     percentile,
     plan,
-    recall,
     write_new,
 )
 from helpdesk.application.identity import digest_token
 from helpdesk.application.model_session import Budget, ModelSession
 from helpdesk.application.rebinding import verify_frozen_rebinding, verify_rebinding_approval
 from helpdesk.application.releases import canonical_hash, prepare_release
+from helpdesk.application.scheduling import RateGovernor, RateProfile
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import Principal, Row
 from helpdesk.domain.rag import BoundScope, fingerprint
@@ -46,6 +48,28 @@ from helpdesk.ports.chat import ChatRunInput
 from helpdesk.settings import Settings
 
 PACKAGE = Path(__file__).resolve().parents[1]
+EVAL_PROTOCOL = {
+    "retry": "bounded-retry-after-v1",
+    "trace": "observed-stages-v1",
+    "usage": "independent-axes-v1",
+}
+
+
+def validate_rate_profile(value: Row, settings: Settings) -> RateProfile:
+    profile = RateProfile.model_validate(value)
+    if profile.endpoints_hash != fingerprint(
+        [settings.chat_url, settings.embedding_url, settings.rerank_url]
+    ):
+        raise ValueError("调度配置端点身份不一致")
+    if any(profile.routes[k].upstream != getattr(settings, k + "_model") for k in profile.routes):
+        raise ValueError("调度配置上游模型身份不一致")
+    if any(
+        profile.routes[k].request_model
+        != (getattr(settings, k + "_request_model") or getattr(settings, k + "_model"))
+        for k in profile.routes
+    ):
+        raise ValueError("调度配置请求别名不一致")
+    return profile
 
 
 @asynccontextmanager
@@ -115,6 +139,14 @@ async def identity(uow: PostgresUnitOfWork) -> tuple[Principal, int]:
 
 
 async def freeze(args: argparse.Namespace, settings: Settings) -> None:
+    rate_path = getattr(args, "rate_profile", None)
+    rate_profile = (
+        validate_rate_profile(json.loads(rate_path.read_text(encoding="utf-8")), settings)
+        if rate_path
+        else None
+    )
+    prices_path = getattr(args, "prices", None)
+    prices = validate_prices(json.loads(prices_path.read_text(encoding="utf-8"))) if prices_path else None
     approval_hash = verify_rebinding_approval(
         args.cases, getattr(args, "source_corpus", None), getattr(args, "rebind_approval", None)
     )
@@ -159,7 +191,10 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
             (args.cases.parent / "review-packet.json").read_bytes()
         )
     manifest = {
-        "schema": "rewrite-eval-v1",
+        "schema": "rewrite-eval-v2",
+        "protocol": EVAL_PROTOCOL,
+        "rate_profile_hash": rate_profile.digest() if rate_profile else None,
+        "prices_hash": fingerprint(prices) if prices else None,
         "split": split,
         "source_scope_version": source_bundle["scope_version"] if source_bundle else None,
         "rebind_approval_sha256": approval_hash,
@@ -178,6 +213,10 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
         "plan": plan(cases, strategies, variants, args.seed),
     }
     write_new(args.out / "manifest.json", manifest)
+    if rate_profile:
+        write_new(args.out / "rate-profile.json", rate_profile.model_dump(by_alias=True))
+    if prices:
+        write_new(args.out / "prices.json", prices)
     print(
         json.dumps({"status": "frozen", "cases": len(cases), "runs": len(manifest["plan"]), "model_calls": 0})
     )
@@ -240,7 +279,8 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
     data = json.loads((folder / "cases.json").read_text(encoding="utf-8"))
     chunks = json.loads((folder / "corpus.json").read_text(encoding="utf-8"))
     if (
-        manifest["schema"] != "rewrite-eval-v1"
+        manifest["schema"] != "rewrite-eval-v2"
+        or manifest.get("protocol") != EVAL_PROTOCOL
         or manifest["cases_hash"] != fingerprint(data)
         or manifest["corpus_hash"] != fingerprint(chunks)
         or manifest["code_hash"] != code_hash(PACKAGE)
@@ -249,7 +289,29 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
         or manifest["prompt_hashes"] != PROMPT_HASHES
     ):
         raise ValueError("代码、模型或冻结输入漂移；需创建新实验，禁止续接")
+    rate_profile = None
+    if manifest.get("rate_profile_hash"):
+        rate_profile = validate_rate_profile(
+            json.loads((folder / "rate-profile.json").read_text(encoding="utf-8")), settings
+        )
+        if rate_profile.digest() != manifest["rate_profile_hash"]:
+            raise ValueError("调度配置漂移")
+    if args.execute and rate_profile is None:
+        raise ValueError("真实执行必须冻结明确的 --rate-profile")
+    if (
+        manifest.get("prices_hash")
+        and fingerprint(json.loads((folder / "prices.json").read_text(encoding="utf-8")))
+        != manifest["prices_hash"]
+    ):
+        raise ValueError("冻结价格漂移")
     cases = {case.id: case for case in [EvalCase.model_validate(row) for row in data]}
+    started_marker = folder / "execution-started.json"
+    if started_marker.exists():
+        recorded = json.loads(started_marker.read_text(encoding="utf-8"))
+        if recorded.get("manifest_hash") != fingerprint(manifest) or any(
+            not (folder / name).exists() for name in ("ledger.sqlite", "scheduling.sqlite")
+        ):
+            raise ValueError("运行状态缺失或身份漂移，禁止重建预算/调度状态")
     # 文件锁存在表示前一执行状态不明，人工核对后才能清理，防止双进程花费。
     lock = folder / "execution.lock"
     with lock.open("x", encoding="utf-8") as stream:
@@ -258,6 +320,7 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
         folder / "ledger.sqlite", manifest["max_calls"], manifest["reservation_limit_estimate"]
     )
     cpu = ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn"))
+    governor = None
     try:
         async with (
             dependencies(settings) as (pool, corpus, uow),
@@ -283,6 +346,14 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
                 return
             if not settings.models_ready:
                 raise ValueError("模型未完整配置")
+            assert rate_profile is not None
+            if not started_marker.exists():
+                if ledger.summary()["calls"] or (folder / "scheduling.sqlite").exists():
+                    raise ValueError("已有状态未绑定启动记录，需人工核对")
+                write_new(started_marker, {"manifest_hash": fingerprint(manifest)})
+            governor = RateGovernor(
+                folder / "scheduling.sqlite", rate_profile, require_existing=bool(ledger.summary()["calls"])
+            )
             done = {row["key"] for row in ledger.results()}
             # 进程中断时已付费但没有结果的运行，不会在续跑时自动重复调用。
             started = {row[0] for row in ledger.conn.execute("SELECT DISTINCT run_id FROM attempts")}
@@ -325,6 +396,7 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
                     guard,
                     ledger,
                     key,
+                    governor,
                 )
                 run = ChatRunInput(
                     key,
@@ -341,6 +413,7 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
                     Context(run, scope, session, corpus, cpu, asyncio.Semaphore(2), arm["variant"])
                 )
                 result: Row = {**arm, "answer": "", "citations": [], "server_ttft_ms": None}
+                cancelled = False
                 try:
                     async with asyncio.timeout(settings.request_timeout):
                         async for event in runner.events():
@@ -357,38 +430,40 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
                         trace=outcome.trace,
                         server_ttft_ms=first_text,
                     )
-                    for stage, ids in [
-                        (
-                            "candidates",
-                            list(
-                                {
-                                    item
-                                    for channels in outcome.trace.get("candidate_ids", {}).values()
-                                    for channel in channels
-                                    for item in channel
-                                }
-                            ),
-                        ),
-                        ("fused", outcome.trace.get("fused_ids", [])),
-                        ("reranked", outcome.trace.get("reranked_ids", [])),
-                        ("context", outcome.trace.get("context_ids", [])),
-                    ]:
-                        result[stage + "_coverage"] = recall(case, ids, chunks[case.id])
-                    result["recall_at_5"] = recall(
-                        case, outcome.trace.get("reranked_ids", [])[:5], chunks[case.id]
-                    )
                 except asyncio.CancelledError:
-                    raise
+                    cancelled = True
+                    result.update(status="interrupted", stop_reason="interrupted")
                 except Exception as error:
                     result.update(
                         status="error",
-                        stop_reason=error.code if isinstance(error, AppError) else "execution_failed",
+                        stop_reason=error.code
+                        if isinstance(error, AppError)
+                        else "deadline"
+                        if isinstance(error, TimeoutError)
+                        else "execution_failed",
                     )
-                result.update(elapsed_ms=round((time.monotonic() - started_at) * 1000), **session.summary())
+                trace = runner.diagnostics()
+                result.update(
+                    trace=trace,
+                    attempt_details=session.attempt_details,
+                    elapsed_ms=round((time.monotonic() - started_at) * 1000),
+                    server_ttft_ms=first_text,
+                    **session.summary(),
+                    **coverage_metrics(case, trace, chunks[case.id]),
+                )
                 ledger.save(key, result)
-                if result.get("stop_reason") in {"experiment_budget_exhausted", "authorization_changed"}:
+                if cancelled:
+                    raise asyncio.CancelledError
+                if result.get("stop_reason") in {
+                    "experiment_budget_exhausted",
+                    "authorization_changed",
+                    "rate_clock_changed",
+                    "rate_state_invalid",
+                }:
                     break
     finally:
+        if governor is not None:
+            governor.close()
         ledger.close()
         lock.unlink(missing_ok=True)
         await asyncio.to_thread(cpu.shutdown, wait=True, cancel_futures=True)
@@ -398,6 +473,13 @@ def report(args: argparse.Namespace) -> None:
     from helpdesk.application.evaluation import EvalCase
 
     manifest = json.loads((args.directory / "manifest.json").read_text(encoding="utf-8"))
+    if manifest["schema"] != "rewrite-eval-v2":
+        raise ValueError("旧协议报告保持原工具和原字节，禁止用新口径覆盖")
+    prices = None
+    if manifest.get("prices_hash"):
+        prices = validate_prices(json.loads((args.directory / "prices.json").read_text(encoding="utf-8")))
+        if fingerprint(prices) != manifest["prices_hash"]:
+            raise ValueError("冻结价格漂移")
     cases = [
         EvalCase.model_validate(row)
         for row in json.loads((args.directory / "cases.json").read_text(encoding="utf-8"))
@@ -439,8 +521,15 @@ def report(args: argparse.Namespace) -> None:
                             if p["strategy"] == strategy and p["variant"] == variant
                         ]
                     ),
-                    "price_version": None,
-                    "fee": None,
+                    "retrieval": retrieval_summary(rows, {c.id: c for c in cases}),
+                    "model_wait_ms_total": sum(r.get("model_wait_ms", 0) for r in rows),
+                    "split_attempted": sum(
+                        any(a["stage"] == "split" for a in r.get("attempt_details", [])) for r in rows
+                    ),
+                    "split_accepted": sum(
+                        r.get("trace", {}).get("split", {}).get("accepted") is True for r in rows
+                    ),
+                    **fee_summary(ledger, [r["key"] for r in rows], prices),
                     "latency_by_status": {
                         s: {
                             "n": sum(r["status"] == s for r in rows),
@@ -465,6 +554,7 @@ def report(args: argparse.Namespace) -> None:
         write_new(args.out / "blind-review.json", packet)
         write_new(args.out / "private-mapping.json", mapping)
         write_new(args.out / "results.json", results)
+        write_new(args.out / "retrieval-pairs.json", paired_retrieval(results))
         write_new(
             args.out / "summary.json",
             {
@@ -493,6 +583,8 @@ def main() -> None:
     freeze_parser.add_argument("--split", choices=["dev", "test"], default="dev")
     freeze_parser.add_argument("--source-corpus", type=Path)
     freeze_parser.add_argument("--rebind-approval", type=Path)
+    freeze_parser.add_argument("--rate-profile", type=Path)
+    freeze_parser.add_argument("--prices", type=Path)
     freeze_parser.add_argument("--max-calls", type=int, required=True)
     freeze_parser.add_argument("--reservation-limit", type=int, required=True)
     execute_parser = sub.add_parser("run")

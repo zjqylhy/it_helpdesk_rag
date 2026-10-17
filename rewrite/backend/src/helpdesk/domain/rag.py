@@ -57,6 +57,10 @@ class Chunk:
 class Usage:
     input_tokens: int | None = None
     output_tokens: int | None = None
+    output_applicable: bool = field(default=True, compare=False)
+    input_source: str | None = field(default=None, compare=False)
+    output_source: str | None = field(default=None, compare=False)
+    raw_output_tokens: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

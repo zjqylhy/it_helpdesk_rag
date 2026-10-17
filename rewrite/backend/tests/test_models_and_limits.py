@@ -52,7 +52,7 @@ async def test_http_protocol_validates_vectors_ranking_and_wire_usage():
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
         provider = HttpModels(settings(), client)
-        assert (await provider.embed(["资料"])) == ([[1, 2, 3]], Usage())
+        assert (await provider.embed(["资料"])) == ([[1, 2, 3]], Usage(None, 0))
         assert (await provider.rank("问题", ["一", "二"])) == ([1, 0], Usage(8, 0))
         assert (await provider.structured("sufficiency", "system", {"question": "问题"}, 512)).value == {
             "behavior": "answer"

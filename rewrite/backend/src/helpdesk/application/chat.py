@@ -136,5 +136,17 @@ class ChatService:
             "first_progress_ms": prepared.first_progress_ms,
             "server_ttft_ms": prepared.server_ttft_ms,
             "stop_reason": reason,
-            **runner.context.models.summary(),
+            **{
+                k: v
+                for k, v in runner.context.models.summary().items()
+                if k
+                in {
+                    "calls",
+                    "input_tokens",
+                    "output_tokens",
+                    "unknown_usage_calls",
+                    "reserved_token_estimate",
+                    "token_limit_is_estimated",
+                }
+            },
         }

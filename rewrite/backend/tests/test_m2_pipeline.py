@@ -105,6 +105,14 @@ async def test_invalid_citation_ends_error_not_completed(client, admin, document
     assert not any(e == "done" for e, _ in frames)
     with psycopg.connect(database) as conn:
         assert conn.execute("SELECT status,answer FROM messages").fetchone() == ("error", "")
+        result = conn.execute(
+            "SELECT manifest->'result' FROM model_runs WHERE message_id IS NOT NULL"
+        ).fetchone()[0]
+        assert result["node_observations"]["select_context"] == "observed"
+        assert result["node_observations"]["validate_citations"] == "failed"
+        assert result["attempt_details"] and "private evidence" not in json.dumps(result)
+    assert "attempt_details" not in response.text and "provider_request_id" not in response.text
+    assert "node_observations" not in response.text
 
 
 async def test_permission_change_cancels_old_graph(client, admin, user, document, app, database):
@@ -282,6 +290,10 @@ async def test_eval_freeze_dryrun_same_graph_pair_and_drift(
         max_calls=50,
         reservation_limit=200000,
     )
+    from fakes import rate_profile
+
+    args.rate_profile = tmp_path / "rates.json"
+    args.rate_profile.write_text(json.dumps(rate_profile(app.state.test_settings)), encoding="utf-8")
     await evaluate.freeze(args, app.state.test_settings)
     monkeypatch.setattr(evaluate.Settings, "models_ready", property(lambda self: True))
     provider = FakeModels()
@@ -303,6 +315,25 @@ async def test_eval_freeze_dryrun_same_graph_pair_and_drift(
     assert ledger.summary()["calls"] == calls
     ledger.close()
     evaluate.report(Namespace(directory=folder, out=tmp_path / "report"))
+    missing = Namespace(**{**vars(args), "out": tmp_path / "without-rates", "rate_profile": None})
+    await evaluate.freeze(missing, app.state.test_settings)
+    with pytest.raises(ValueError, match="rate-profile"):
+        await evaluate.execute(Namespace(directory=missing.out, execute=True), app.state.test_settings)
+    assert len(provider.calls) == calls
+    state = folder / "scheduling.sqlite"
+    saved_state = state.read_bytes()
+    state.unlink()
+    with pytest.raises(ValueError, match="运行状态缺失"):
+        await evaluate.execute(Namespace(directory=folder, execute=True), app.state.test_settings)
+    assert not state.exists()
+    state.write_bytes(saved_state)
+    original_profile = (folder / "rate-profile.json").read_bytes()
+    profile_data = json.loads(original_profile)
+    profile_data["routes"]["chat"]["rpm"] -= 1
+    (folder / "rate-profile.json").write_text(json.dumps(profile_data), encoding="utf-8")
+    with pytest.raises(ValueError, match="调度配置漂移"):
+        await evaluate.execute(Namespace(directory=folder, execute=True), app.state.test_settings)
+    (folder / "rate-profile.json").write_bytes(original_profile)
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
     manifest["code_hash"] = "drift"
     (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
