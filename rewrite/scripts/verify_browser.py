@@ -62,14 +62,15 @@ def main():
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         asyncio.run(bootstrap(dsn,'qa-admin','QaAdminTest123!'))
         api_port,web_port=free_port(),free_port()
-        env=os.environ.copy()
+        # 浏览器回归只使用合成模型，不能继承部署环境的网关路由或关闭开关。
+        env={key:value for key,value in os.environ.items() if not key.startswith('HD_') or key=='HD_BROWSER'}
         env.update(HD_DATABASE_URL=dsn,HD_UPLOAD_DIR=str(output/'uploads'),HD_PORT=str(api_port),
                    HD_API_TARGET=f'http://127.0.0.1:{api_port}',HD_WEB_TARGET=f'http://127.0.0.1:{web_port}',
                    HD_QA_ARTIFACTS=str(output),PYTHONIOENCODING='utf-8')
         model_url=f'http://127.0.0.1:{models.server_port}'
         env.update(HD_CHAT_URL=model_url+'/chat', HD_EMBEDDING_URL=model_url+'/embed',HD_RERANK_URL=model_url+'/rank',
                    HD_CHAT_MODEL='fixture-chat',HD_EMBEDDING_MODEL='fixture-embed',HD_RERANK_MODEL='fixture-rank',
-                   HD_RERANK_FORMAT='generic',HD_EMBEDDING_DIMENSION='3')
+                   HD_RERANK_FORMAT='generic',HD_EMBEDDING_DIMENSION='3',HD_MODEL_INFERENCE_ENABLED='true')
         for label,command,cwd in [
             ('api',[sys.executable,'-m','helpdesk.entrypoints.api'],REWRITE/'backend'),
             ('web',['node',str(REWRITE/'frontend/node_modules/vite/bin/vite.js'),'--host','127.0.0.1','--port',str(web_port),'--strictPort'],REWRITE/'frontend'),

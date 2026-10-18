@@ -66,7 +66,7 @@ flowchart LR
 
 ## 本机运行
 
-使用独立数据库和文件根，显式设置 `HD_` 环境变量；程序不会加载根目录旧 `.env`，也不会加载下面的示例文件。配置字段见 [示例](../../rewrite/.env.example)。
+使用独立数据库和文件根，显式设置 `HD_` 环境变量；程序不会加载根目录旧 `.env`，也不会加载下面的示例文件。配置字段见 [当前配置模板](../../.env.example)（后续统一配置，显式加载为 `.env.python`）。
 
 ```powershell
 uv sync --locked --project rewrite/backend --python 3.12

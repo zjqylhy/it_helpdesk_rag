@@ -138,7 +138,7 @@ def init(port):
     sample='postgresql://rag:rag@localhost:5432/rag?sslmode=disable'
     owned=parsed.hostname=='127.0.0.1' and parsed.port==port and parsed.path=='/rag' and parsed.username=='rag'
     if not old_url or old_url==sample or owned:
-        if not config.is_file():config.write_text((ROOT/'.env.example').read_text(encoding='utf-8'),encoding='utf-8')
+        if not config.is_file():config.write_text((ROOT/'rag/.env.example').read_text(encoding='utf-8'),encoding='utf-8')
         set_key(str(config),'DATABASE_URL',url,quote_mode='never')
         set_key(str(config),'POSTGRES_PASSWORD',data['business_password'],quote_mode='never')
         print('已更新 .env 的本地数据库连接，其他配置保留。')

@@ -1,10 +1,11 @@
-param([switch]$Browser)
+﻿param([switch]$Browser)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 Push-Location $taskRoot
 try {
     $taskPython = Join-Path $taskRoot 'rewrite/backend/.venv/Scripts/python.exe'
-    uv sync --locked --project rewrite/backend --python $taskPython --cache-dir data/rewrite-uv-cache
+    $taskInterpreter = if (Test-Path -LiteralPath $taskPython) { $taskPython } else { '3.12' }
+    uv sync --locked --project rewrite/backend --python $taskInterpreter --cache-dir data/rewrite-uv-cache
     if ($LASTEXITCODE -ne 0) { throw 'Python 依赖校验失败' }
     & $taskPython -m ruff check rewrite/backend/src rewrite/backend/tests --config rewrite/backend/pyproject.toml
     if ($LASTEXITCODE -ne 0) { throw 'Ruff 检查失败' }

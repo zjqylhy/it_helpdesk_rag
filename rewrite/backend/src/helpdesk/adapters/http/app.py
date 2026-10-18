@@ -52,7 +52,7 @@ class Services:
 
 
 class ResponseGuard:
-    """M1 普通响应在最终发送处复核授权；M2 SSE 将使用逐事件 EventSink。"""
+    """普通响应在最终发送处复核授权；SSE 由逐事件 EventSink 单独处理。"""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

@@ -23,7 +23,7 @@
 
 ## 外部契约与迁移
 
-旧程序仅在一次性 synthetic 数据库运行，作为外部 HTTP 行为对照；采集工具见 [capture_legacy_contracts.py](../../rewrite/scripts/capture_legacy_contracts.py)，不会被新应用调用。冻结的合成响应和旧表结构放在 [fixtures](../../rewrite/backend/tests/fixtures/legacy-api.json)，不含真实业务内容或 Token。
+旧程序仅在一次性 synthetic 数据库运行，作为外部 HTTP 行为对照；采集工具见 `capture_legacy_contracts.py`（已在 Python 统一迁移时删除，可从本记录对应的 Git 历史恢复），不会被新应用调用。冻结的合成响应和旧表结构放在 [fixtures](../../rewrite/backend/tests/fixtures/legacy-api.json)，不含真实业务内容或 Token。
 
 适配器保留 `/auth/me` 的 `ID/Role`、创建资源的 201、上传的 202、管理写操作的 204，以及失败任务重试的空 202。默认问答设置使用旧 `enabled` 字段；账号更新兼容 `PATCH /admin/users/{id}`，另提供明确的 `/disabled` 操作。新账号 ID 仍为不透明的 32 位字符串。错误保留可读的 `error` 字段，新增稳定 `code`，具体提示文案不作为冻结的逐字契约。
 

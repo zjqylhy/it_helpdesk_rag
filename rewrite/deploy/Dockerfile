@@ -42,6 +42,7 @@ RUN sed -i "s#https://files.pythonhosted.org/packages/#$PACKAGE_ARTIFACT_ROOT#g"
 COPY rewrite/backend/tests/ ./tests/
 COPY rewrite/contracts/ /workspace/rewrite/contracts/
 COPY rewrite/scripts/ /workspace/rewrite/scripts/
+COPY tools/check_runtime.py /workspace/tools/check_runtime.py
 COPY --from=frontend /workspace/rewrite/frontend/ /workspace/rewrite/frontend/
 COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
 CMD ["python", "-m", "pytest", "tests", "-q", "--tb=short"]

@@ -1,5 +1,7 @@
 # 评测集格式与维护
 
+> 此文档记录旧版本流程/结果。当前在线应用见 [README](../README.md)，旧评测仍可用的命令见 [离线评测入口](../rag/README.md)。旧 Go 与 HTTP 服务启动命令已移除。
+
 跨库新入口与冻结状态见本文末尾“独立跨库评测”、[效果深度实施记录](effect-depth-implementation.md) 和 [冻结与预算记录](scope-40-release-and-budget.md)。旧单库流程及历史成绩继续保留。
 
 文件为 UTF-8 JSONL，每行一题。以下是格式示例，版本 ID 与 quote 需要替换成实际导出快照中的值；它不是可用黄金样本。

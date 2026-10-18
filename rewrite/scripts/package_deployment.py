@@ -19,11 +19,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    files = sorted(
+    files = sorted([
         p for folder in (ROOT / "rewrite", ROOT / "docs/redesign") for p in folder.rglob("*")
         if p.is_file() and not EXCLUDED.intersection(p.relative_to(ROOT).parts)
         and not p.name.startswith(".env") and p.suffix not in {".pyc", ".log"}
-    )
+    ] + [ROOT / name for name in (
+        "compose.yaml", ".env.example", ".dockerignore", "README.md",
+        "docs/python-unification.md", "docs/cloud.md", "docs/windows.md", "deploy/certs/README.md",
+        "tools/windows.ps1", "tools/docker.ps1", "tools/check_runtime.py",
+    )])
     manifest = {
         "base_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "working_tree_clean": not bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)),

@@ -1,75 +1,74 @@
+# 统一 Python 应用；使用 --env-file .env.python，卷与原应用隔离。
+x-python-environment: &python-environment
+  HD_DATABASE_URL: postgresql://${POSTGRES_USER:-helpdesk}:${POSTGRES_PASSWORD:?请配置 POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-helpdesk}
+  HD_UPLOAD_DIR: /data/uploads
+  HD_MODEL_INFERENCE_ENABLED: ${HD_MODEL_INFERENCE_ENABLED:-false}
 services:
   db:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
     environment:
-      POSTGRES_DB: rag
-      POSTGRES_USER: rag
+      POSTGRES_USER: ${POSTGRES_USER:-helpdesk}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请配置 POSTGRES_PASSWORD}
-    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
-    volumes: ["postgres:/var/lib/postgresql/data"]
+      POSTGRES_DB: ${POSTGRES_DB:-helpdesk}
+    ports: ["127.0.0.1:${POSTGRES_PORT:-55534}:5432"]
+    volumes: ["python_database:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 3s
       retries: 20
-  backend:
-    build: {context: ., dockerfile: backend/Dockerfile}
+  api:
+    image: helpdesk-python:${APP_REVISION:-local}
+    build:
+      context: .
+      dockerfile: rewrite/deploy/Dockerfile
+      target: runtime
+      args:
+        APP_REVISION: ${APP_REVISION:-local}
     restart: unless-stopped
+    env_file: .env.python
     environment:
-      DATABASE_URL: postgresql://rag:${POSTGRES_PASSWORD}@db:5432/rag?sslmode=disable
-      HTTP_ADDR: 0.0.0.0:8080
-      RAG_URL: http://rag:8000
-      UPLOAD_DIR: /data/uploads
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?请配置 INTERNAL_TOKEN}
-      ADMIN_USER: ${ADMIN_USER:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请配置 ADMIN_PASSWORD}
-      USER_NAME: ${USER_NAME:-demo}
-      USER_PASSWORD: ${USER_PASSWORD:?请配置 USER_PASSWORD}
-      DB_SIMPLE_PROTOCOL: ${DB_SIMPLE_PROTOCOL:-false}
-    volumes: ["uploads:/data/uploads"]
+      <<: *python-environment
+      HD_HOST: 0.0.0.0
+      HD_PORT: 18080
+    volumes:
+      - python_files:/data/uploads
+      - ./deploy/certs:/run/certs:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       db: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/health', timeout=3)"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 20
-  rag:
+  worker:
+    image: helpdesk-python:${APP_REVISION:-local}
+    command: [python, -m, helpdesk.entrypoints.worker]
+    restart: unless-stopped
+    env_file: .env.python
+    environment: *python-environment
+    volumes:
+      - python_files:/data/uploads:ro
+      - ./deploy/certs:/run/certs:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      api: {condition: service_healthy}
+  web:
     build:
       context: .
-      dockerfile: rag/Dockerfile
-      args:
-        PYPI_DOWNLOAD_HOST: ${PYPI_DOWNLOAD_HOST:-files.pythonhosted.org}
-        UV_DEFAULT_INDEX: ${UV_BUILD_INDEX:-https://pypi.org/simple}
-        APP_REVISION: ${APP_REVISION:-unknown}
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://rag:${POSTGRES_PASSWORD}@db:5432/rag?sslmode=disable
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-${QWEN_API_KEY:-}}
-      IT_HELPDESK_RAG_API_KEY: ${IT_HELPDESK_RAG_API_KEY:-}
-    volumes: ["uploads:/data/uploads:ro"]
-    depends_on:
-      backend: {condition: service_healthy}
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
-      interval: 10s
-      timeout: 3s
-      retries: 20
-  web:
-    build: {context: ., dockerfile: frontend/Dockerfile}
+      dockerfile: rewrite/deploy/Dockerfile
+      target: web
     restart: unless-stopped
     ports: ["127.0.0.1:${WEB_PORT:-3000}:80"]
     depends_on:
-      backend: {condition: service_healthy}
-      rag: {condition: service_healthy}
+      api: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
-      interval: 10s
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/health]
+      interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
 volumes:
-  postgres:
-  uploads:
+  python_database:
+  python_files:

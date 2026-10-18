@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # 仅读取新前缀；不自动载入旧 .env，避免误接业务库或模型网关。
-    model_config = SettingsConfigDict(env_prefix="HD_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="HD_", extra="ignore", env_ignore_empty=True)
     database_url: SecretStr
     upload_dir: Path
     host: str = "127.0.0.1"

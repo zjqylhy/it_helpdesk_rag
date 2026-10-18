@@ -7,7 +7,6 @@ ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ROOT / '.env', extra='ignore', populate_by_name=True, env_ignore_empty=True)
     database_url: str = 'postgresql://rag:rag@localhost:5432/rag'
-    internal_token: str = ''
     deepseek_base_url: str = 'https://api.deepseek.com'
     deepseek_api_key: str = ''
     llm_model: str = 'deepseek-v4-pro'
@@ -33,7 +32,7 @@ class Settings(BaseSettings):
     context_budget: int = Field(default=8000, ge=1000)
 
     def dsn(self):
-        # Go 的 sslmode URL 可直接用于 psycopg；避免把凭据写入日志。
+        # 历史评测沿用原数据库 URL，不在诊断输出中打印凭据。
         return self.database_url
 
     def uses_gateway(self, kind):
