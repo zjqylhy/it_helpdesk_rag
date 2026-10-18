@@ -10,7 +10,8 @@ from .runtime import loop_factory
 
 async def main():
     settings = Settings(model_timeout=45)
-    if not settings.deepseek_api_key or not settings.dashscope_api_key:
+    if (not (settings.gateway_api_key if settings.chat_gateway_enabled else settings.deepseek_api_key)
+            or not (settings.gateway_api_key if settings.retrieval_gateway_enabled else settings.dashscope_api_key)):
         print('模型 Key 未完全配置；未发出请求。')
         return 1
     models = Models(settings)

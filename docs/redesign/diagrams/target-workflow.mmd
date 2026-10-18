@@ -1,0 +1,49 @@
+flowchart TD
+  ST[START] --> AD[admit 绑定主体范围与预算]
+  AD --> SC[resolve_scope 消解指代与组织]
+  SC --> SR{范围结果}
+  SR -- clarify --> CL[clarify]
+  SR -- refuse --> RF[refuse]
+  SR -- search --> QP[plan_query 按策略生成查询与任务]
+  QP --> RT[retrieve 初次授权检索]
+  RT --> FU[fuse 融合并固定候选上限]
+  FU --> RK[rerank 固定模型与原问题]
+  RK --> SEL[select_context 固定Top5与字符预算]
+  SEL --> CF{启用覆盖检查}
+  CF -- 否 --> SU[sufficiency 整体可回答性]
+  CF -- 是 --> CV[check_coverage 按任务输出缺项与ID]
+  CV --> CR{覆盖结果与轮次}
+  CR -- 全覆盖 --> SU
+  CR -- 组织歧义 --> CL
+  CR -- unknown --> ER[error]
+  CR -- 初次缺失 --> DI[diagnose_candidates 定向查融合候选]
+  DI --> DR{缺召回且尚未补查 预算足}
+  DR -- 是 --> RW[rewrite_missing 仅改写缺项]
+  RW --> SP[supplementary_retrieve 同范围补查一次]
+  SP --> MG[merge_candidates 保留首轮 按ID合并]
+  MG --> RK
+  DR -- 否 --> LIM[limit_answer 限定有据独立任务]
+  CR -- 已补查仍缺 --> LIM
+  LIM --> LR{是否有可独立回答任务}
+  LR -- 否 --> RF
+  LR -- 是 --> SU
+  SU --> SD{充分性结果}
+  SD -- refuse --> RF
+  SD -- clarify --> CL
+  SD -- answer --> MD{回答检查模式}
+  MD -- 关闭 --> LIVE[generate_stream 直接流式基线]
+  LIVE --> VC[validate_citations 编号与对象校验]
+  VC --> FIN[finalize]
+  MD -- 开启 --> DT[generate_draft 只写私有草稿]
+  DT --> AC[check_answer 依据与要求完整性]
+  AC --> AR{检查结果}
+  AR -- 通过 --> EM[emit_answer 授权复核后发布正文引用]
+  AR -- 首次失败且可修正 --> RP[repair_answer 同证据修正一次]
+  RP --> AC
+  AR -- 明确证据不足 --> RF
+  AR -- 不确定或复核失败 --> ER
+  EM --> FIN
+  CL --> FIN
+  RF --> FIN
+  ER --> FIN
+  FIN --> END[END]

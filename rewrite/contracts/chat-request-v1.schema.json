@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Session Id",
+      "type": "string"
+    },
+    "question": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_id",
+    "question",
+    "request_id"
+  ],
+  "title": "ChatRequest",
+  "type": "object"
+}

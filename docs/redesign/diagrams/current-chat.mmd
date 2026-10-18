@@ -1,0 +1,22 @@
+flowchart TD
+  A[Vue 提交 session_id question request_id] --> B[Go 鉴权 会话归属 当前可见范围]
+  B --> C[绑定授权 revision 注册取消 保存 generating]
+  C --> D[过滤历史 保留 completed 与 clarify 最多8条消息]
+  D --> E[内部令牌与主体送往 Python]
+  E --> F[AuthorizedStore 重算可读文档版本并绑定快照]
+  F --> G{范围与组织明确吗}
+  G -- 否 --> CL[澄清或拒答 不检索]
+  G -- 是 --> H[改写问题 在线默认 baseline]
+  H --> I[逐库 BM25 Top20 与向量 Top20]
+  I --> J[RRF 每库20 跨库轮转至40]
+  J --> K[完整重排 比较对象优先 Top5 正文8000字符]
+  K --> L{整题充分性判断}
+  L -- 不能回答 --> CL
+  L -- 可以回答 --> M[模型正文增量立即通过 SSE 输出]
+  M --> N{生成结束后校验引用编号与比较对象}
+  N -- 通过 --> O[citations 与 done completed]
+  N -- 失败 --> ER[error 已输出正文未验证]
+  CL --> T[done clarify 或 refused]
+  O --> SAVE[Go 保存正文 引用 trace 终态]
+  T --> SAVE
+  ER --> SAVE

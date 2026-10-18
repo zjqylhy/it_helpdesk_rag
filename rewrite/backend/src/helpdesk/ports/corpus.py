@@ -1,0 +1,13 @@
+from typing import Protocol
+
+from helpdesk.domain.models import Principal
+from helpdesk.domain.rag import BoundScope, Chunk
+
+
+class AuthorizedCorpus(Protocol):
+    async def bind(self, principal: Principal, kb_ids: tuple[str, ...], revision: int) -> BoundScope: ...
+    async def check(self, principal: Principal, scope: BoundScope) -> None: ...
+    async def chunks(self, principal: Principal, scope: BoundScope, kb_id: str) -> list[Chunk]: ...
+    async def vector(
+        self, principal: Principal, scope: BoundScope, kb_id: str, embedding: list[float]
+    ) -> list[Chunk]: ...

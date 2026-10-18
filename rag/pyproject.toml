@@ -2,7 +2,7 @@
 name = "helpdesk-rag"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.36,<1", "httpx>=0.28,<1", "psycopg[binary]>=3.2,<4", "pgvector>=0.4,<1", "pypdf>=5,<7", "python-docx>=1.1,<2", "jieba>=0.42.1", "rank-bm25>=0.2.2", "python-dotenv>=1,<2", "pydantic-settings>=2.8,<3"]
+dependencies = ["httpx>=0.28,<1", "psycopg[binary]>=3.2,<4", "pgvector>=0.4,<1", "pypdf>=5,<7", "python-docx>=1.1,<2", "jieba>=0.42.1", "rank-bm25>=0.2.2", "python-dotenv>=1,<2", "pydantic-settings>=2.8,<3"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2"]

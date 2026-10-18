@@ -1,0 +1,379 @@
+{
+  "source_revision": "ceeba43",
+  "data": "synthetic-only",
+  "samples": [
+    {
+      "label": "login",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "body": {
+        "role": "admin",
+        "token": "<redacted>",
+        "username": "contract-admin"
+      }
+    },
+    {
+      "label": "me",
+      "method": "GET",
+      "path": "/api/v1/auth/me",
+      "status": 200,
+      "body": {
+        "ID": "<id>",
+        "Role": "admin"
+      }
+    },
+    {
+      "label": "unauthenticated",
+      "method": "GET",
+      "path": "/api/v1/knowledge-bases",
+      "status": 401,
+      "body": {
+        "error": "请先登录"
+      }
+    },
+    {
+      "label": "create_kb",
+      "method": "POST",
+      "path": "/api/v1/knowledge-bases",
+      "status": 201,
+      "body": {
+        "id": "<id>"
+      }
+    },
+    {
+      "label": "list_kbs",
+      "method": "GET",
+      "path": "/api/v1/knowledge-bases",
+      "status": 200,
+      "body": [
+        {
+          "default_search": true,
+          "id": "<id>",
+          "name": "合约库",
+          "organization": "合约学校",
+          "revision": 0
+        }
+      ]
+    },
+    {
+      "label": "list_documents",
+      "method": "GET",
+      "path": "/api/v1/documents",
+      "status": 200,
+      "body": []
+    },
+    {
+      "label": "upload",
+      "method": "POST",
+      "path": "/api/v1/documents",
+      "status": 202,
+      "body": {
+        "document_id": "<id>",
+        "job_id": "<id>",
+        "version_id": "<id>"
+      }
+    },
+    {
+      "label": "list_documents_after_upload",
+      "method": "GET",
+      "path": "/api/v1/documents",
+      "status": 200,
+      "body": []
+    },
+    {
+      "label": "list_documents_in_kb",
+      "method": "GET",
+      "path": "/api/v1/documents?kb_id=<id>",
+      "status": 200,
+      "body": [
+        {
+          "active_status": null,
+          "active_version": null,
+          "created_at": "<timestamp>",
+          "enabled": true,
+          "error": null,
+          "filename": "sample.txt",
+          "id": "<id>",
+          "job_id": "<id>",
+          "job_status": "queued",
+          "kb_id": "<id>",
+          "latest_version": "<id>",
+          "progress": 0,
+          "title": "合约文档",
+          "version_created_at": "<timestamp>",
+          "visibility": "groups"
+        }
+      ]
+    },
+    {
+      "label": "versions",
+      "method": "GET",
+      "path": "/api/v1/documents/<id>/versions",
+      "status": 200,
+      "body": [
+        {
+          "created_at": "<timestamp>",
+          "dimension": null,
+          "embedding_model": null,
+          "error": null,
+          "filename": "sample.txt",
+          "id": "<id>",
+          "job_id": "<id>",
+          "progress": 0,
+          "source": "",
+          "status": "queued"
+        }
+      ]
+    },
+    {
+      "label": "enabled",
+      "method": "PATCH",
+      "path": "/api/v1/documents/<id>/enabled",
+      "status": 204,
+      "body": ""
+    },
+    {
+      "label": "create_session",
+      "method": "POST",
+      "path": "/api/v1/sessions",
+      "status": 201,
+      "body": {
+        "id": "<id>"
+      }
+    },
+    {
+      "label": "list_sessions",
+      "method": "GET",
+      "path": "/api/v1/sessions",
+      "status": 200,
+      "body": [
+        {
+          "created_at": "<timestamp>",
+          "id": "<id>",
+          "kb_id": "<id>",
+          "kb_ids": [
+            "<id>"
+          ],
+          "title": "新会话",
+          "user_id": "<id>"
+        }
+      ]
+    },
+    {
+      "label": "admin_users",
+      "method": "GET",
+      "path": "/api/v1/admin/users",
+      "status": 200,
+      "body": [
+        {
+          "disabled": false,
+          "id": "<id>",
+          "role": "admin",
+          "usage_kind": "demo",
+          "username": "contract-admin"
+        },
+        {
+          "disabled": false,
+          "id": "<id>",
+          "role": "user",
+          "usage_kind": "demo",
+          "username": "contract-user"
+        }
+      ]
+    },
+    {
+      "label": "create_user",
+      "method": "POST",
+      "path": "/api/v1/admin/users",
+      "status": 204,
+      "body": ""
+    },
+    {
+      "label": "admin_groups",
+      "method": "GET",
+      "path": "/api/v1/admin/groups",
+      "status": 200,
+      "body": []
+    },
+    {
+      "label": "create_group",
+      "method": "POST",
+      "path": "/api/v1/admin/groups",
+      "status": 204,
+      "body": ""
+    },
+    {
+      "label": "groups_after_create",
+      "method": "GET",
+      "path": "/api/v1/admin/groups",
+      "status": 200,
+      "body": [
+        {
+          "id": "<id>",
+          "name": "合约组",
+          "user_ids": []
+        }
+      ]
+    },
+    {
+      "label": "users_after_create",
+      "method": "GET",
+      "path": "/api/v1/admin/users",
+      "status": 200,
+      "body": [
+        {
+          "disabled": false,
+          "id": "<id>",
+          "role": "admin",
+          "usage_kind": "demo",
+          "username": "contract-admin"
+        },
+        {
+          "disabled": false,
+          "id": "<id>",
+          "role": "user",
+          "usage_kind": "demo",
+          "username": "contract-user"
+        },
+        {
+          "disabled": false,
+          "id": "<id>",
+          "role": "user",
+          "usage_kind": "demo",
+          "username": "new-user"
+        }
+      ]
+    },
+    {
+      "label": "members",
+      "method": "PUT",
+      "path": "/api/v1/admin/groups/<id>/members",
+      "status": 204,
+      "body": ""
+    },
+    {
+      "label": "disabled",
+      "method": "PATCH",
+      "path": "/api/v1/admin/users/<id>/disabled",
+      "status": 404,
+      "body": "404 page not found"
+    },
+    {
+      "label": "update_user",
+      "method": "PATCH",
+      "path": "/api/v1/admin/users/<id>",
+      "status": 204,
+      "body": ""
+    },
+    {
+      "label": "default_search",
+      "method": "PATCH",
+      "path": "/api/v1/knowledge-bases/<id>/default-search",
+      "status": 400,
+      "body": {
+        "error": "缺少默认问答设置"
+      }
+    },
+    {
+      "label": "default_search_enabled",
+      "method": "PATCH",
+      "path": "/api/v1/knowledge-bases/<id>/default-search",
+      "status": 204,
+      "body": ""
+    },
+    {
+      "label": "real_usage",
+      "method": "POST",
+      "path": "/api/v1/admin/users",
+      "status": 204,
+      "body": ""
+    },
+    {
+      "label": "invalid_usage",
+      "method": "POST",
+      "path": "/api/v1/admin/users",
+      "status": 400,
+      "body": {
+        "error": "账号或密码无效；密码需为12–72字节"
+      }
+    },
+    {
+      "label": "usage_test",
+      "method": "POST",
+      "path": "/api/v1/admin/users",
+      "status": 400,
+      "body": {
+        "error": "账号或密码无效；密码需为12–72字节"
+      }
+    },
+    {
+      "label": "usage_eval",
+      "method": "POST",
+      "path": "/api/v1/admin/users",
+      "status": 400,
+      "body": {
+        "error": "账号或密码无效；密码需为12–72字节"
+      }
+    },
+    {
+      "label": "usage_benchmark",
+      "method": "POST",
+      "path": "/api/v1/admin/users",
+      "status": 400,
+      "body": {
+        "error": "账号或密码无效；密码需为12–72字节"
+      }
+    },
+    {
+      "label": "usage_real",
+      "method": "POST",
+      "path": "/api/v1/admin/users",
+      "status": 400,
+      "body": {
+        "error": "账号或密码无效；密码需为12–72字节"
+      }
+    },
+    {
+      "label": "access",
+      "method": "GET",
+      "path": "/api/v1/admin/documents/<id>/access",
+      "status": 200,
+      "body": [
+        {
+          "group_ids": [],
+          "id": "<id>",
+          "visibility": "groups"
+        }
+      ]
+    },
+    {
+      "label": "set_access",
+      "method": "PUT",
+      "path": "/api/v1/admin/documents/<id>/access",
+      "status": 204,
+      "body": ""
+    },
+    {
+      "label": "set_access_compat",
+      "method": "PUT",
+      "path": "/api/v1/documents/<id>/access",
+      "status": 404,
+      "body": "404 page not found"
+    },
+    {
+      "label": "retry",
+      "method": "POST",
+      "path": "/api/v1/ingestion-jobs/<id>/retry",
+      "status": 202,
+      "body": ""
+    },
+    {
+      "label": "logout",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "status": 204,
+      "body": ""
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "已有问答与成对实验架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": ".archify/architecture-adaptive-retrieval-20261017-090000/architecture.html",
+    "repository": {
+      "url": "https://github.com/zjqylhy/it_helpdesk_rag.git",
+      "revision": "68a1ab654e2b42d77af876def3ae9fcb43aa2aab",
+      "provider": "github",
+      "link_mode": "local-only"
+    }
+  },
+  "components": [
+    {"id":"web","type":"frontend","label":"Vue 问答界面","sublabel":"POST SSE 与引用展示","tag":"已有","pos":[40,170],"size":[180,76],"sources":[{"path":"frontend/src/api.ts","line":10,"end_line":30},{"path":"frontend/src/App.vue","line":37,"end_line":67}]},
+    {"id":"go","type":"backend","label":"Go 会话服务","sublabel":"鉴权 历史 SSE 转发","tag":"已有","pos":[350,170],"size":[190,76],"sources":[{"path":"backend/main.go","line":529,"end_line":686}]},
+    {"id":"history","type":"database","label":"消息与引用记录","sublabel":"PostgreSQL 会话表","tag":"已有","pos":[350,20],"size":[190,76],"sources":[{"path":"backend/main.go","line":551,"end_line":567}]},
+    {"id":"pipeline","type":"backend","label":"Python RAG 流水线","sublabel":"路由 检索 充分性 生成","tag":"线上默认 baseline","pos":[700,170],"size":[220,76],"sources":[{"path":"rag/helpdesk/api.py","line":61,"end_line":70},{"path":"rag/helpdesk/pipeline.py","line":179,"end_line":273}]},
+    {"id":"acl","type":"security","label":"AuthorizedStore","sublabel":"限制范围与文档版本","tag":"已有","pos":[1090,170],"size":[200,76],"sources":[{"path":"rag/helpdesk/access.py","line":17,"end_line":58}]},
+    {"id":"corpus","type":"database","label":"正文与向量索引","sublabel":"PostgreSQL 授权版本","tag":"已有","pos":[1090,410],"size":[200,76],"sources":[{"path":"rag/helpdesk/store.py","line":44,"end_line":66},{"path":"rag/helpdesk/access.py","line":52,"end_line":58}]},
+    {"id":"models","type":"backend","label":"Models 适配器","sublabel":"调用计数 重试 用量","tag":"已有","pos":[700,410],"size":[220,76],"sources":[{"path":"rag/helpdesk/providers.py","line":12,"end_line":96}]},
+    {"id":"endpoint","type":"cloud","label":"配置的模型端点","sublabel":"聊天 向量 重排","tag":"按设置路由","pos":[700,630],"size":[220,76],"sources":[{"path":"rag/helpdesk/providers.py","line":44,"end_line":65}]},
+    {"id":"evaluation","type":"backend","label":"冻结成对实验","sublabel":"baseline 与 split-v1","tag":"工具已有 效果待验证","pos":[350,410],"size":[220,76],"sources":[{"path":"rag/helpdesk/evaluation/scope_runner.py","line":18,"end_line":115},{"path":"rag/helpdesk/evaluation/scope_runner.py","line":126,"end_line":163}]},
+    {"id":"report","type":"database","label":"私有报告与盲审包","sublabel":"阶段覆盖 成本 人工裁决","tag":"已有","pos":[350,630],"size":[220,76],"sources":[{"path":"rag/helpdesk/evaluation/scope_report.py","line":43,"end_line":101},{"path":"rag/helpdesk/evaluation/scope_report.py","line":141,"end_line":184}]}
+  ],
+  "connections": [
+    {"id":"web-go","from":"web","to":"go","label":"POST / SSE"},
+    {"id":"go-rag","from":"go","to":"pipeline","label":"内部 POST / SSE"},
+    {"id":"save-message","from":"go","to":"history","label":"保存终态"},
+    {"id":"retrieve-authorized","from":"pipeline","to":"acl","label":"授权检索","variant":"security"},
+    {"id":"read-corpus","from":"acl","to":"corpus","label":"限定版本 SQL","variant":"security"},
+    {"id":"model-calls","from":"pipeline","to":"models","label":"模型调用"},
+    {"id":"model-routes","from":"models","to":"endpoint","label":"HTTP"},
+    {"id":"replay","from":"evaluation","to":"pipeline","label":"离线重放","variant":"dashed"},
+    {"id":"write-report","from":"evaluation","to":"report","label":"写入报告","variant":"dashed"}
+  ],
+  "cards": [
+    {"dot":"cyan","title":"已有链路","items":["在线 API 默认 baseline；split-v1 由离线 scope 实验选择。","消息表与正文索引属于同一 PostgreSQL，图中按用途分开展示。"]},
+    {"dot":"amber","title":"尚待验证","items":["真实查询拆解实验尚未闭环；已有工具不等于效果提升。","当前充分性按整题判断，引用检查只验证编号与比较对象。"]},
+    {"dot":"rose","title":"后续设计","items":["逐任务覆盖与一次补检索待实现，先保留现有排序和证据预算。","完整回答检查另做实验，采用缓存草稿后输出，并实测首字延迟。"]}
+  ]
+}

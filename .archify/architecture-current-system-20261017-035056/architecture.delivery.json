@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "d30d2640-3df4-4b09-9cd5-a04fe5f68958",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Users\\LHY95\\Documents\\Codex\\it_helpdesk_rag\\.archify\\architecture-current-system-20261017-035056\\candidate.json",
+  "output": "C:\\Users\\LHY95\\Documents\\Codex\\it_helpdesk_rag\\.archify\\architecture-current-system-20261017-035056\\architecture.html",
+  "specification": {
+    "sha256": "c8fd8fde54dc905218948db51fd3dd39e62e5d2c08851e8c66b7024ff9f88c25",
+    "bytes": 8862
+  },
+  "artifact": {
+    "sha256": "6e88d91bd8e83ab6d528041b6f38f481336f303d6b4d4542e9b848bd912cc825",
+    "bytes": 768599
+  }
+}

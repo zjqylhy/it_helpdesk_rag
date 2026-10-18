@@ -14,3 +14,4 @@ eval/private
 **/*.log
 tools
 rag/tests
+deploy/certs

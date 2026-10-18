@@ -1,0 +1,38 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	admit(admit)
+	resolve_scope(resolve_scope)
+	plan_query(plan_query)
+	retrieve(retrieve)
+	fuse(fuse)
+	rerank(rerank)
+	select_context(select_context)
+	sufficiency(sufficiency)
+	generate_stream(generate_stream)
+	validate_citations(validate_citations)
+	limited(limited)
+	finalize(finalize)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> admit;
+	admit --> resolve_scope;
+	fuse --> rerank;
+	generate_stream --> validate_citations;
+	limited --> finalize;
+	plan_query --> retrieve;
+	rerank --> select_context;
+	resolve_scope -.-> limited;
+	resolve_scope -.-> plan_query;
+	retrieve --> fuse;
+	select_context --> sufficiency;
+	sufficiency -.-> generate_stream;
+	sufficiency -.-> limited;
+	validate_citations --> finalize;
+	finalize --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

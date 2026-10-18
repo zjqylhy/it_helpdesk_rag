@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "9c8f22c5-fbc6-4999-9815-e0d18a41448a",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Users\\LHY95\\Documents\\Codex\\it_helpdesk_rag\\.archify\\architecture-adaptive-retrieval-20261017-090000\\candidate.json",
+  "output": "C:\\Users\\LHY95\\Documents\\Codex\\it_helpdesk_rag\\.archify\\architecture-adaptive-retrieval-20261017-090000\\architecture.html",
+  "specification": {
+    "sha256": "bef0eff3ccc8ddb66dac6971a9310ec7b81c33ffaddeb9482af27277296ff4c5",
+    "bytes": 4622
+  },
+  "artifact": {
+    "sha256": "90193cbd8d43abb2511901f3568219ea4f4708751669776010b1e6aad4ec9bad",
+    "bytes": 765382
+  }
+}

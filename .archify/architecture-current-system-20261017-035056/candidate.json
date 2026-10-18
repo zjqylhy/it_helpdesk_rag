@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "当前全栈系统 服务与数据职责",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": ".archify/architecture-current-system-20261017-035056/architecture.html",
+    "repository": {
+      "url": "https://github.com/zjqylhy/it_helpdesk_rag.git",
+      "revision": "ae16c6c43f0f1b698676d02a15ad0a34bfbec178",
+      "provider": "github",
+      "link_mode": "local-only"
+    }
+  },
+  "components": [
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Vue 与 Web 代理",
+      "sublabel": "问答 知识管理 权限页面",
+      "tag": "已有",
+      "pos": [
+        40,
+        180
+      ],
+      "size": [
+        200,
+        80
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/App.vue",
+          "line": 1,
+          "end_line": 85
+        },
+        {
+          "path": "frontend/src/AccessManagement.vue",
+          "line": 1,
+          "end_line": 30
+        },
+        {
+          "path": "frontend/nginx.conf",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "go",
+      "type": "backend",
+      "label": "Go 业务 API",
+      "sublabel": "鉴权 会话 文档 SSE",
+      "tag": "已有 Gin 与直接 SQL",
+      "pos": [
+        390,
+        180
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "backend/main.go",
+          "line": 117,
+          "end_line": 155
+        },
+        {
+          "path": "backend/main.go",
+          "line": 529,
+          "end_line": 686
+        },
+        {
+          "path": "backend/access.go",
+          "line": 17,
+          "end_line": 110
+        }
+      ]
+    },
+    {
+      "id": "rag",
+      "type": "backend",
+      "label": "Python 问答流水线",
+      "sublabel": "FastAPI 与可复用 Pipeline",
+      "tag": "线上默认 baseline",
+      "pos": [
+        790,
+        180
+      ],
+      "size": [
+        230,
+        80
+      ],
+      "sources": [
+        {
+          "path": "rag/helpdesk/api.py",
+          "line": 49,
+          "end_line": 77
+        },
+        {
+          "path": "rag/helpdesk/pipeline.py",
+          "line": 179,
+          "end_line": 273
+        },
+        {
+          "path": "rag/helpdesk/access.py",
+          "line": 11,
+          "end_line": 58
+        }
+      ]
+    },
+    {
+      "id": "models",
+      "type": "cloud",
+      "label": "配置的模型端点",
+      "sublabel": "聊天 Embedding Rerank",
+      "tag": "网关或直连配置",
+      "pos": [
+        1200,
+        180
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "sources": [
+        {
+          "path": "rag/helpdesk/providers.py",
+          "line": 44,
+          "end_line": 65
+        },
+        {
+          "path": "rag/helpdesk/config.py",
+          "line": 8,
+          "end_line": 31
+        }
+      ]
+    },
+    {
+      "id": "database",
+      "type": "database",
+      "label": "PostgreSQL 与 pgvector",
+      "sublabel": "授权 业务 版本 任务 向量",
+      "tag": "已有关系数据与距离排序",
+      "pos": [
+        390,
+        460
+      ],
+      "size": [
+        240,
+        80
+      ],
+      "sources": [
+        {
+          "path": "db/schema.sql",
+          "line": 1,
+          "end_line": 76
+        },
+        {
+          "path": "rag/helpdesk/store.py",
+          "line": 13,
+          "end_line": 64
+        },
+        {
+          "path": "backend/main.go",
+          "line": 551,
+          "end_line": 567
+        }
+      ]
+    },
+    {
+      "id": "files",
+      "type": "database",
+      "label": "原文件持久卷",
+      "sublabel": "Go 可写 Python 只读",
+      "tag": "已有",
+      "pos": [
+        390,
+        20
+      ],
+      "size": [
+        230,
+        80
+      ],
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "line": 13,
+          "end_line": 57
+        },
+        {
+          "path": "backend/main.go",
+          "line": 302,
+          "end_line": 333
+        },
+        {
+          "path": "rag/helpdesk/worker.py",
+          "line": 36,
+          "end_line": 43
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Python 入库 Worker",
+      "sublabel": "租约 解析 向量 原子发布",
+      "tag": "与 RAG 同进程启动",
+      "pos": [
+        1200,
+        460
+      ],
+      "size": [
+        230,
+        80
+      ],
+      "sources": [
+        {
+          "path": "rag/helpdesk/api.py",
+          "line": 18,
+          "end_line": 28
+        },
+        {
+          "path": "rag/helpdesk/worker.py",
+          "line": 12,
+          "end_line": 73
+        }
+      ]
+    },
+    {
+      "id": "evaluation",
+      "type": "backend",
+      "label": "独立离线评测 CLI",
+      "sublabel": "冻结范围 成对实验 盲审",
+      "tag": "工具已有 效果待闭环",
+      "pos": [
+        790,
+        740
+      ],
+      "size": [
+        230,
+        80
+      ],
+      "sources": [
+        {
+          "path": "rag/helpdesk/evaluation/scope_runner.py",
+          "line": 18,
+          "end_line": 115
+        },
+        {
+          "path": "rag/helpdesk/evaluation/scope_runner.py",
+          "line": 126,
+          "end_line": 163
+        },
+        {
+          "path": "rag/helpdesk/evaluation/scope_store.py",
+          "line": 40,
+          "end_line": 82
+        }
+      ]
+    },
+    {
+      "id": "artifacts",
+      "type": "database",
+      "label": "私有评测资产",
+      "sublabel": "题目 原文 请求账本 裁决",
+      "tag": "原始材料不可覆盖",
+      "pos": [
+        390,
+        740
+      ],
+      "size": [
+        240,
+        80
+      ],
+      "sources": [
+        {
+          "path": "rag/helpdesk/evaluation/scope_runner.py",
+          "line": 36,
+          "end_line": 63
+        },
+        {
+          "path": "rag/helpdesk/evaluation/scope_report.py",
+          "line": 141,
+          "end_line": 187
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "web-api",
+      "from": "web",
+      "to": "go",
+      "label": "HTTP / SSE"
+    },
+    {
+      "id": "api-rag",
+      "from": "go",
+      "to": "rag",
+      "label": "内部 POST / SSE"
+    },
+    {
+      "id": "api-data",
+      "from": "go",
+      "to": "database",
+      "label": "业务与授权 SQL"
+    },
+    {
+      "id": "api-file",
+      "from": "go",
+      "to": "files",
+      "label": "保存原文件"
+    },
+    {
+      "id": "rag-data",
+      "from": "rag",
+      "to": "database",
+      "label": "授权范围检索",
+      "variant": "security"
+    },
+    {
+      "id": "rag-model",
+      "from": "rag",
+      "to": "models",
+      "label": "模型 HTTP"
+    },
+    {
+      "id": "worker-file",
+      "from": "worker",
+      "to": "files",
+      "label": "只读原文件"
+    },
+    {
+      "id": "worker-data",
+      "from": "worker",
+      "to": "database",
+      "label": "租约与事务发布"
+    },
+    {
+      "id": "worker-model",
+      "from": "worker",
+      "to": "models",
+      "label": "Embedding"
+    },
+    {
+      "id": "evaluation-rag",
+      "from": "evaluation",
+      "to": "rag",
+      "label": "本地流水线重放",
+      "variant": "dashed"
+    },
+    {
+      "id": "evaluation-data",
+      "from": "evaluation",
+      "to": "database",
+      "label": "冻结授权核验",
+      "variant": "dashed"
+    },
+    {
+      "id": "evaluation-artifact",
+      "from": "evaluation",
+      "to": "artifacts",
+      "label": "读冻结集 写报告",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "已实现的服务边界",
+      "items": [
+        "Compose 为 Web、Go、RAG、数据库四服务；Worker 由 RAG 生命周期启动。",
+        "评测在独立进程调用同一 Pipeline 代码，不通过在线 HTTP 服务。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "当前控制方式",
+      "items": [
+        "在线默认 baseline；split-v1 只在独立 scope 实验选择。",
+        "充分性按整题判断；正文增量已发出后才校验引用编号与比较对象。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "重实现边界",
+      "items": [
+        "LangGraph、逐任务覆盖、条件补查和草稿语义检查尚未实现。",
+        "Go、Python、Vue 和数据访问全部按新契约实现，旧代码只作现状与兼容证据。"
+      ]
+    }
+  ]
+}

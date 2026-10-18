@@ -19,5 +19,12 @@ dist/
 __pycache__/
 *.pyc
 *.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .idea/
 .vscode/
+
+# 部署者提供的网关证书不进入源码。
+deploy/certs/*
+!deploy/certs/README.md
