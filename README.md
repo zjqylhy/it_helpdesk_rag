@@ -54,3 +54,5 @@ $env:HD_TEST_DATABASE_URL = 'postgresql://USER:PASSWORD@127.0.0.1:PORT/postgres'
 新评测使用 `helpdesk-eval`，先执行 `uv run --env-file .env.python --project rewrite/backend helpdesk-eval --help`。旧评测集维护、Ragas 和历史重放继续使用 [独立离线评测环境](rag/README.md)，旧结果及裁决保留。历史成绩见 [原验证记录](docs/verification.md)，不能作为新应用的质量成绩。
 
 [迁移范围与本次验证](docs/python-unification.md) · [原规格与设计](docs/redesign/README.md)
+
+2026-10-18 已将服务器主入口切换为 Python，原账号与知识/历史保留，详见 [实际部署记录](docs/python-deployment-20261018.md)。

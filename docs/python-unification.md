@@ -49,3 +49,6 @@ docker compose --env-file .env.python -p it-helpdesk-python build --build-arg PY
 此替代仅验证 runtime/web target；verify/browser target 中复制 Node 可执行文件需要与 Debian 兼容的 Node 基础镜像，不能以 Alpine 替代。默认基础镜像的构建需在 Docker Hub 网络恢复后执行；未宣称该次失败构建通过。
 
 本次付费模型调用 0，未执行生产数据迁移、生产入口切换、推送或远程 GitHub Actions。现有 `.env`、数据库、上传资料、私有题集和原始报告保留；本机新建 `.env.python` 供后续配置，不含模型凭据。代码与测试提交后等待人工验收。
+
+
+后续用户已明确授权提交 PR、迁移生产数据并切换主入口；已执行结果见 [2026-10-18 Python 部署记录](python-deployment-20261018.md)。上面的“未推送/未切换”描述源码迁移批次结束时的状态。
