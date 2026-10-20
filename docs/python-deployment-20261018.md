@@ -51,9 +51,11 @@
 
 新项目命令固定使用：
 
+2026-10-21 公网 HTTPS 发布后，维护命令增加 Web 镜像覆盖文件，详见 [公网发布记录](public-https-deployment-20261021.md)。
+
 ```sh
 cd /opt/it-helpdesk-rag-python-20261018/source
-docker compose --env-file .env.python -p it-helpdesk-python -f compose.yaml -f compose.server.yaml ps
+docker compose --env-file .env.python -p it-helpdesk-python -f compose.yaml -f compose.server.yaml -f compose.public-https.yaml ps
 ```
 
 旧项目的原配置为 `/opt/it-helpdesk-rag/compose.yaml` 与 `compose.release.yaml`。切换脚本在验证失败时会停止新写入者并恢复原项目；本次没有触发回滚。现在新入口已经上线，后续若需回滚，应先停止新写入并备份新库/文件，核对上线后的增量；不能直接启动停留在切换前快照的旧库而丢弃新数据。完整迁移与恢复原则见 [部署说明](cloud.md)。

@@ -56,3 +56,5 @@ $env:HD_TEST_DATABASE_URL = 'postgresql://USER:PASSWORD@127.0.0.1:PORT/postgres'
 [迁移范围与本次验证](docs/python-unification.md) · [原规格与设计](docs/redesign/README.md)
 
 2026-10-18 已将服务器主入口切换为 Python，原账号与知识/历史保留，详见 [实际部署记录](docs/python-deployment-20261018.md)。
+
+2026-10-21 已接入 [正式 HTTPS 站点](https://helpdesk-rag.linhengyi.xyz) 并展示 ICP 备案号，公网登录、历史与引用下载已验证，真实问答待人工验收。详见 [公网发布记录](docs/public-https-deployment-20261021.md) 和 [维护说明](docs/public-https.md)。
