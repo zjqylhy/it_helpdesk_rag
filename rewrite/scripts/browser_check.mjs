@@ -9,11 +9,26 @@ const browser = await chromium.launch({
   headless: true,
 })
 const checks = [], errors = []
+async function checkFiling(page, label) {
+  const footer = page.getByRole('contentinfo')
+  const link = footer.getByRole('link', { name: '粤ICP备2026161349号', exact: true })
+  await link.waitFor({ state: 'visible' })
+  if (await footer.count() !== 1 || await link.getAttribute('href') !== 'https://beian.miit.gov.cn/') throw Error('Invalid filing footer')
+  const box = await link.boundingBox()
+  const usernameField = page.getByLabel('用户名', { exact: true })
+  const username = await usernameField.count() ? await usernameField.boundingBox() : null
+  if (!box || box.width <= 0 || box.x < 0 || box.x + box.width > page.viewportSize().width) throw Error('Filing link outside viewport width')
+  if (username && box.y < username.y + username.height) throw Error('Filing overlaps login form')
+  checks.push(label)
+}
 let page
 try {
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(process.env.HD_WEB_TARGET)
+  await page.getByLabel('用户名').waitFor()
+  await checkFiling(page, 'desktop login filing footer')
+  await page.screenshot({ path: folder + '/login-desktop.png', fullPage: true })
   await page.getByLabel('用户名').fill('qa-admin')
   await page.getByLabel('密码', { exact: true }).fill('wrong')
   await page.getByRole('button', { name: '进入工作台' }).click()
@@ -24,6 +39,7 @@ try {
   await page.getByRole('heading', { name: '公开知识库' }).waitFor()
   await page.getByRole('heading', { name: '受限知识库' }).waitFor()
   await page.getByRole('heading', { name: '知识问答', exact: true }).waitFor()
+  await checkFiling(page, 'desktop workspace filing footer')
   await page.screenshot({ path: folder + '/admin-desktop.png', fullPage: true })
   checks.push('admin login and real lists')
   await page.reload()
@@ -95,6 +111,7 @@ try {
   if (await page.getByRole('heading', { name: '受限知识库' }).count()) throw Error('Restricted KB leaked')
   checks.push('member scope')
   await page.setViewportSize({ width: 390, height: 844 })
+  await checkFiling(page, 'mobile workspace filing footer')
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Mobile overflow')
   await page.screenshot({ path: folder + '/member-mobile.png', fullPage: true })
   checks.push('mobile 390px')
@@ -105,6 +122,9 @@ try {
   checks.push('failed refresh clears stale metadata')
   await page.getByRole('button', { name: '退出登录' }).click()
   await page.getByLabel('用户名').waitFor()
+  await checkFiling(page, 'mobile login filing footer')
+  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Mobile login overflow')
+  await page.screenshot({ path: folder + '/login-mobile.png', fullPage: true })
   if (await page.evaluate(() => sessionStorage.getItem('helpdesk.token'))) throw Error('Token retained')
   checks.push('logout clears token')
   if (errors.length) throw Error(errors.join('; '))
