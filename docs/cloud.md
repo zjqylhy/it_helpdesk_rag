@@ -19,6 +19,8 @@ docker compose --env-file .env.python -p it-helpdesk-python up --no-build -d --w
 
 管理员密码交互输入，只能在空账号库引导。既有账号库跳过此步。正式部署使用唯一项目名且后续保持一致；新卷 `python_database`、`python_files` 与历史应用隔离。网页默认回环 3000，数据库回环 55534；外部 HTTPS 由宿主机 Caddy/nginx 转发，示例见 `deploy/Caddyfile`。
 
+正式域名、Caddy 系统服务、证书维护及 Web 独立更新见 [公网 HTTPS 维护](public-https.md)。
+
 模型端点和凭据通过 `.env.python` 注入；私有 CA 放 `deploy/certs/`，容器路径为 `/run/certs/文件名`。宿主机隧道使用 `HD_MODEL_CONNECT_HOST=host.docker.internal`，保留逻辑 Host/SNI 和 TLS 校验。配置完整后显式开启 `HD_MODEL_INFERENCE_ENABLED=true`。旧内部令牌与服务转发地址不再使用。
 
 ## 旧数据迁移
