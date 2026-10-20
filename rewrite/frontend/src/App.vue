@@ -6,6 +6,7 @@ import KnowledgeList from './features/knowledge/KnowledgeList.vue'
 import ChatView from './features/chat/ChatView.vue'
 import KnowledgeView from './features/knowledge/KnowledgeView.vue'
 import AccessView from './features/access/AccessView.vue'
+import SiteFooter from './shared/SiteFooter.vue'
 import { api, ApiError, type KnowledgeBase, type Session } from './shared/api'
 
 const auth = useAuth(), ready = ref(false), busy = ref(false), error = ref('')
@@ -41,6 +42,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <div class="app-shell">
   <div v-if="!ready" class="loading" role="status">正在打开知识空间…</div>
   <LoginView v-else-if="!auth.principal.value" />
   <div v-else class="workspace">
@@ -52,6 +54,8 @@ onMounted(async () => {
       <KnowledgeView v-if="page === 'knowledge'" :token="auth.token.value" :admin="auth.principal.value.Role === 'admin'" :knowledge="knowledge" @changed="load" />
       <AccessView v-if="page === 'access' && auth.principal.value.Role === 'admin'" :token="auth.token.value" :knowledge="knowledge" />
       <KnowledgeList v-if="page === 'chat'" :items="knowledge" />
-    </main><footer>知答 · 有据可查，依权可见</footer>
+    </main>
+  </div>
+  <SiteFooter />
   </div>
 </template>
