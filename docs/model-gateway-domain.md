@@ -16,12 +16,12 @@ HD_MODEL_CA_FILE=
 
 正式配置修改前，在服务器受限目录保存权限为 600 的原文件并核对无在途任务。配置及备份不复制到本机或 Git。仅修改文件或容器 restart 不会更新已创建容器的环境，需在维护窗口重建 API、Worker；数据库、Web 镜像和 Caddy 沿用原版本。
 
-所有维护命令保留三份生效配置，避免 Web 被恢复为旧镜像：
+2026-10-23 问答恢复版本发布后，所有维护命令保留四份生效配置，避免 API、Worker 或 Web 被恢复为旧镜像；当前镜像与回退说明见 [部署记录](chat-reconnect-deployment-20261023.md)：
 
 ```sh
 cd /opt/it-helpdesk-rag-python-20261018/source
-docker compose --env-file .env.python -p it-helpdesk-python -f compose.yaml -f compose.server.yaml -f compose.public-https.yaml config --quiet
-docker compose --env-file .env.python -p it-helpdesk-python -f compose.yaml -f compose.server.yaml -f compose.public-https.yaml up --no-build --no-deps -d --wait api worker
+docker compose --env-file .env.python -p it-helpdesk-python -f compose.yaml -f compose.server.yaml -f compose.public-https.yaml -f compose.chat-reconnect.yaml config --quiet
+docker compose --env-file .env.python -p it-helpdesk-python -f compose.yaml -f compose.server.yaml -f compose.public-https.yaml -f compose.chat-reconnect.yaml up --no-build --no-deps -d --wait api worker
 docker exec it-helpdesk-python-web-1 nginx -t
 docker exec it-helpdesk-python-web-1 nginx -s reload
 ```

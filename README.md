@@ -4,7 +4,7 @@ Python 知识问答应用：FastAPI 业务 API、LangGraph 问答编排、独立
 
 保留登录、用户组与文档权限、知识库与版本管理、文件上传和异步入库、多库问答、引用原文下载、会话历史、幂等和撤权中止。问答由 API 内异步任务执行，页面每秒查询进度；切页、刷新、断网或关闭标签页不取消已受理任务，返回后继续查看原消息。主动停止、权限失效、超时及服务关闭仍会终止任务；API 重启不自动续跑。当前运行基线策略；覆盖补查和独立回答检查仍按 [原规格](docs/redesign/spec.md) 后续推进。
 
-断连恢复的本地实现、接口切换说明与验证结果见 [交付记录](docs/chat-reconnect-implementation.md)，当前待人工验收，尚未部署。
+断连恢复的实现、接口切换与验证结果见 [交付记录](docs/chat-reconnect-implementation.md)；已部署正式服务器，发布与回退说明见 [部署记录](docs/chat-reconnect-deployment-20261023.md)，页面体验待人工验收。
 
 ## Windows 开发
 

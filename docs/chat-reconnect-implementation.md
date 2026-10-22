@@ -1,6 +1,6 @@
 # 问答异步执行与页面恢复交付记录
 
-日期：2026-10-23。状态：本地实现与验证完成，待人工验收；未推送、未部署、未执行付费模型调用。
+日期：2026-10-23。状态：实现与自动验证完成，已推送功能分支并部署正式服务器，待人工验收；自动验证未执行付费模型调用。发布详情见 [部署记录](chat-reconnect-deployment-20261023.md)。
 
 对应 [需求规格](spec-chat-reconnect.md) 与 [已确认技术方案](technical-plan-chat-reconnect.md)。分支：`codex/chat-async-polling-20261023`。
 
@@ -21,7 +21,7 @@
 | `GET /api/v1/sessions/{session_id}/messages` | 复用历史接口；生成中正文为草稿，终态为正式结果；逐次校验所有权和来源权限 |
 | `POST /api/v1/sessions/{session_id}/messages/{message_id}/stop` | 取消对应任务，返回实际状态；重复停止安全，已完成答案不会清空 |
 
-受理/停止回执见 `rewrite/contracts/chat-receipt-v1.schema.json`，HTTP 接口见生成后的 `rewrite/contracts/openapi.json`。POST 问答不再返回 SSE，前后端必须协调发布；独立外部客户端需要同步修改，本次未执行生产切换或核查生产访问日志。
+受理/停止回执见 `rewrite/contracts/chat-receipt-v1.schema.json`，HTTP 接口见生成后的 `rewrite/contracts/openapi.json`。POST 问答不再返回 SSE，前后端必须协调发布；本次已一起更新正式 API 与 Web。独立外部客户端需要同步修改；未核查生产访问日志中是否存在这类客户端。
 
 ## 验证结果
 
@@ -36,6 +36,8 @@
 | TypeScript 与 Vite 生产构建 | 通过 |
 | 真实浏览器联测 | 25 项通过，页面异常为 0；覆盖 API、Vue、独立入库 Worker、登录、文件引用、权限及移动端 |
 | 恢复期间生成次数 | 切页、切换会话、刷新、离线恢复、关闭重开标签页、丢失受理回执六个场景，各仅生成一次 |
+| 服务器待发布镜像 | 使用实际 API/Web 镜像、独立临时数据库和合成模型，重复通过 25 项浏览器检查，页面错误 0 |
+| 发布后公网与容器 | 公网 7 项检查、页面错误 0；API/Web/数据库 healthy、Worker running；运行容器的 JSON 回执、查询和停止接口定义正确 |
 
 浏览器检查清单：`data/rewrite-m1-qa/browser-check.json`；恢复页面截图：`data/rewrite-m1-qa/chat-recovered-desktop.png`。它们是忽略提交的本机合成验证产物。
 
@@ -57,4 +59,4 @@ $env:HD_BROWSER = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 - 前端不是逐字推送，进度写入和查询各约 1 秒，展示还受网络和处理耗时影响；长会话轮询传输整个消息列表。
 - 原有令牌、权限、时限与模型预算仍有效；发起令牌失效可能终止执行。
 - 本轮验证证明恢复与生命周期行为，不代表真实模型答案质量已经重新验收。
-- 待用户人工检查恢复与停止体验；生产发布、旧客户端升级及部署另行确认。
+- 已按用户授权完成生产发布；待用户人工检查恢复与停止体验。独立旧客户端需要同步升级；服务器和 API 重启仍不支持问答自动续跑。
