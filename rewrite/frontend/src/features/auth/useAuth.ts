@@ -1,10 +1,12 @@
 import { readonly, ref } from 'vue'
 import { api, type Principal } from '../../shared/api'
+import { clearChatState } from '../../shared/chat-state'
 
 const token = ref(sessionStorage.getItem('helpdesk.token') ?? '')
 const principal = ref<Principal | null>(null)
 
 function clear() {
+  if (principal.value) clearChatState(principal.value.ID)
   token.value = ''
   principal.value = null
   sessionStorage.removeItem('helpdesk.token')

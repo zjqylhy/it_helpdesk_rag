@@ -50,7 +50,7 @@ onMounted(async () => {
     <main class="dashboard"><div class="welcome"><div><span class="eyebrow">你的知识空间</span><h1>从可信资料开始。</h1><p class="muted">查看可访问的知识库与最近会话。</p></div><button :disabled="busy" @click="load">{{ busy ? '正在刷新…' : '刷新资料' }}</button></div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <nav class="tabs" aria-label="工作空间"><button :aria-current="page === 'chat'" @click="page = 'chat'">知识问答</button><button :aria-current="page === 'knowledge'" @click="page = 'knowledge'">知识管理</button><button v-if="auth.principal.value.Role === 'admin'" :aria-current="page === 'access'" @click="page = 'access'">权限管理</button></nav>
-      <ChatView v-if="page === 'chat'" :key="refreshKey" :token="auth.token.value" :knowledge="knowledge" />
+      <ChatView v-if="page === 'chat'" :key="refreshKey" :token="auth.token.value" :user-id="auth.principal.value.ID" :knowledge="knowledge" />
       <KnowledgeView v-if="page === 'knowledge'" :token="auth.token.value" :admin="auth.principal.value.Role === 'admin'" :knowledge="knowledge" @changed="load" />
       <AccessView v-if="page === 'access' && auth.principal.value.Role === 'admin'" :token="auth.token.value" :knowledge="knowledge" />
       <KnowledgeList v-if="page === 'chat'" :items="knowledge" />

@@ -6,8 +6,15 @@ from threading import Thread
 
 
 class Handler(BaseHTTPRequestHandler):
+    generation_counts = {}
+
     def log_message(self, *_):
         pass
+
+    def do_GET(self):
+        encoded = json.dumps({'generation_counts': self.generation_counts}).encode()
+        self.send_response(200); self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(encoded))); self.end_headers(); self.wfile.write(encoded)
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
@@ -20,11 +27,14 @@ class Handler(BaseHTTPRequestHandler):
         elif body.get('stream'):
             self.send_response(200); self.send_header('Content-Type', 'text/event-stream'); self.end_headers()
             prompt = json.loads(body['messages'][1]['content'])
+            key = prompt['question']
+            self.generation_counts[key] = self.generation_counts.get(key, 0) + 1
             try:
                 # 慢流给浏览器留出取消窗口；其他请求仍由服务线程处理。
                 if '中断' in prompt['question']: time.sleep(2)
                 for text in ['请打开', '设置 [C1]。']:
                     self.wfile.write(('data: ' + json.dumps({'choices': [{'delta': {'content': text}, 'finish_reason': None}]}, ensure_ascii=False) + '\n\n').encode()); self.wfile.flush()
+                    if text == '请打开' and '后台执行' in key: time.sleep(6)
                     time.sleep(.05)
                 self.wfile.write(b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":5}}\n\ndata: [DONE]\n\n'); self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
