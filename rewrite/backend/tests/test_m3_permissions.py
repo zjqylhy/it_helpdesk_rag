@@ -3,8 +3,8 @@ import json
 
 import psycopg
 from conftest import grant
+from test_m2_pipeline import answer, publish, wait_run
 from test_m2_pipeline import app as app
-from test_m2_pipeline import events, publish
 
 
 async def new_document(client, admin, app, text, kb_id=None, default=True):
@@ -56,10 +56,10 @@ async def test_four_approved_scope_boundaries(client, admin, user, document, app
         headers=user[1],
         json={"session_id": session, "request_id": "boundaries", "question": "如何操作？"},
     )
-    assert events(result)[-1][1]["status"] == "completed"
+    assert (await answer(client, user[1], session, result))["status"] == "completed"
     calls = json.dumps(app.state.test_models.calls, ensure_ascii=False)
     assert "HIDDEN" not in calls and "EXCLUDED_DEFAULT" not in calls
-    citations = next(d["citations"] for e, d in events(result) if e == "citations")
+    citations = (await answer(client, user[1], session, result))["citations"]
     assert {c["version_id"] for c in citations} == {document["version_id"]}
 
 
@@ -86,7 +86,7 @@ async def test_group_revocation_hides_history_and_cancels_inflight(
         headers=user[1],
         json={"session_id": session, "request_id": "before", "question": "如何操作？"},
     )
-    assert events(result)[-1][1]["status"] == "completed"
+    assert (await answer(client, user[1], session, result))["status"] == "completed"
     await membership([])
     history = (await client.get(f"/api/v1/sessions/{session}/messages", headers=user[1])).json()
     assert (
@@ -116,6 +116,7 @@ async def test_group_revocation_hides_history_and_cancels_inflight(
     await asyncio.wait_for(provider.entered.wait(), 15)
     await membership([])
     result = await asyncio.wait_for(task, 10)
-    assert events(result)[-1][0] == "error" and not any(e == "done" for e, _ in events(result))
+    await wait_run(app, result)
+    assert (await answer(client, user[1], session, result))["status"] == "restricted"
     with psycopg.connect(database) as conn:
         assert conn.execute("SELECT count(*) FROM messages WHERE status='generating'").fetchone()[0] == 0

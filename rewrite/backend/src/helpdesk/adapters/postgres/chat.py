@@ -74,13 +74,27 @@ class ChatStore:
             if row is None:
                 raise AppError("invalid_terminal", 409, "消息已结束")
 
-    async def abort(self, message_id: str, status: str, reason: str) -> None:
+    async def abort(self, message_id: str, status: str, reason: str) -> str:
         async with self.pool.connection() as conn:
-            # 只用于尚未成功写出 done 的在途请求，覆盖提交成功而网络终态发送失败的窗口。
+            # 停止和迟到异常不能覆盖已经提交的正式结果。
+            row = await (
+                await conn.execute(
+                    """UPDATE messages SET status=%s,answer='',citations='[]',trace=%s,completion_kind=NULL
+                WHERE id=%s AND status='generating' RETURNING status""",
+                    (status, jsonb({"stop_reason": reason}), message_id),
+                )
+            ).fetchone()
+            if row is None:
+                row = await (
+                    await conn.execute("SELECT status FROM messages WHERE id=%s", (message_id,))
+                ).fetchone()
+            return row["status"] if row else status
+
+    async def progress(self, message_id: str, answer: str) -> None:
+        async with self.pool.connection() as conn:
             await conn.execute(
-                """UPDATE messages SET status=%s,answer='',citations='[]',trace=%s,completion_kind=NULL
-                WHERE id=%s""",
-                (status, jsonb({"stop_reason": reason}), message_id),
+                "UPDATE messages SET answer=%s WHERE id=%s AND status='generating'",
+                (answer, message_id),
             )
 
     async def recover(self) -> None:

@@ -735,18 +735,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "有序 SSE 业务事件",
+          "202": {
+            "description": "Successful Response",
             "content": {
-              "text/event-stream": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ChatReceipt"
                 }
               }
             }
           },
-          "503": {
-            "description": "模型尚未配置"
+          "200": {
+            "description": "已受理的同一请求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReceipt"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -764,6 +771,59 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/messages/{message_id}/stop": {
+      "post": {
+        "summary": "Stop Chat",
+        "operationId": "stop_chat_api_v1_sessions__session_id__messages__message_id__stop_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Message Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/admin/users": {
@@ -1214,6 +1274,40 @@
           "file"
         ],
         "title": "Body_upload_version_api_v1_documents__document_id__versions_post"
+      },
+      "ChatReceipt": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Message Id"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Request Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "generating",
+              "completed",
+              "clarify",
+              "refused",
+              "interrupted",
+              "error"
+            ],
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message_id",
+          "request_id",
+          "status"
+        ],
+        "title": "ChatReceipt"
       },
       "ChatRequest": {
         "properties": {

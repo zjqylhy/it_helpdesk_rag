@@ -46,8 +46,16 @@ class Conversations(Queries):
             visible = await Catalog(self.conn).knowledge_bases(principal)
             if not set(kb_ids).issubset({r["id"] for r in visible}):
                 return False
-        # 没有可核验依赖的历史，按保守策略遮蔽而非猜测其来源。
-        return bool(version_ids or kb_ids)
+        # 新请求可以明确绑定空范围，只会产生无资料拒答；旧历史无绑定信息时仍遮蔽。
+        scope_hash = provenance.get("scope_hash")
+        bound_empty = (
+            not version_ids
+            and not kb_ids
+            and provenance.get("snapshot_members") == []
+            and isinstance(scope_hash, str)
+            and len(scope_hash) == 64
+        )
+        return bool(version_ids or kb_ids or bound_empty)
 
     async def admit(
         self, session_id: str, request_id: str, question: str, principal: Principal

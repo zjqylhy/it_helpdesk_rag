@@ -7,7 +7,7 @@ from conftest import grant
 from pydantic import ValidationError
 
 from helpdesk.application.barrier import AuthorizationBarrier
-from helpdesk.domain.contracts import AnswerCheck, CoverageReport
+from helpdesk.domain.contracts import AnswerCheck, ChatReceipt, CoverageReport
 
 
 async def test_cancelled_writer_does_not_block_future_requests():
@@ -151,6 +151,7 @@ def test_exported_schemas_match_models():
     for filename, model in [
         ("coverage-v1.schema.json", CoverageReport),
         ("answer-check-v1.schema.json", AnswerCheck),
+        ("chat-receipt-v1.schema.json", ChatReceipt),
     ]:
         assert json.loads((folder / filename).read_text(encoding="utf-8")) == model.model_json_schema(
             by_alias=True

@@ -55,5 +55,6 @@ class AuthorizationBarrier:
 
     def revoke(self, revision: int) -> None:
         for old_revision, task in tuple(self._runs.values()):
-            if old_revision < revision:
+            # 已在取消的任务需要完成终态清理，连续撤权不能再次打断它。
+            if old_revision < revision and not task.cancelling():
                 task.cancel("authorization_changed")

@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "message_id": {
+      "minLength": 1,
+      "title": "Message Id",
+      "type": "string"
+    },
+    "request_id": {
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "generating",
+        "completed",
+        "clarify",
+        "refused",
+        "interrupted",
+        "error"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id",
+    "request_id",
+    "status"
+  ],
+  "title": "ChatReceipt",
+  "type": "object"
+}
