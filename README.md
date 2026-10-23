@@ -1,4 +1,6 @@
-# 知答 · IT 知识助手
+# 知答 · 推送知识库查询助手
+
+当前演示语料为推送接入、指标口径、内容审核和排查经验，面向同组研发及相关业务方同事。语料位于 [knowledge/push](knowledge/push/README.md)，共 9 个主题、18 篇文档，来自原创模拟手册及官方公开资料的简短转述，不包含公司内部原文。应用架构保持原有实现；历史 IT 语料的离线评测结果不代表本套推送语料的效果。
 
 Python 知识问答应用：FastAPI 业务 API、LangGraph 问答编排、独立 Python Worker、Vue 3/TypeScript、PostgreSQL/pgvector。在线应用统一在 `rewrite/`，已移除 Go 服务、旧前端和内部转发链。
 

@@ -1,0 +1,211 @@
+{
+  "schema": "push-corpus-v1",
+  "version": "2026-10-24",
+  "organization": "推送业务示例部门",
+  "nature": "公开资料简短转述与原创模拟业务手册；非公司内部原文",
+  "topics": [
+    {
+      "key": "integration",
+      "name": "推送接入与消息生命周期"
+    },
+    {
+      "key": "metrics",
+      "name": "推送指标与数据口径"
+    },
+    {
+      "key": "channels",
+      "name": "推送通道与终端限制"
+    },
+    {
+      "key": "registration",
+      "name": "推送设备标识与令牌管理"
+    },
+    {
+      "key": "troubleshooting",
+      "name": "推送故障定位与排查"
+    },
+    {
+      "key": "reliability",
+      "name": "推送重复与延迟处理"
+    },
+    {
+      "key": "review",
+      "name": "推送内容审核与准入"
+    },
+    {
+      "key": "release",
+      "name": "推送发布与值守经验"
+    },
+    {
+      "key": "governance",
+      "name": "推送知识权限与助手边界"
+    }
+  ],
+  "sources": {
+    "fcm_delivery": "https://firebase.google.com/docs/cloud-messaging/understand-delivery",
+    "fcm_registration": "https://firebase.google.com/docs/cloud-messaging/manage-tokens",
+    "android_permission": "https://developer.android.com/develop/ui/compose/notifications/notification-permission",
+    "fcm_ttl": "https://firebase.google.com/docs/cloud-messaging/customize-messages/setting-message-lifespan"
+  },
+  "documents": [
+    {
+      "id": "PUSH-001",
+      "topic": "integration",
+      "title": "推送接入检查清单",
+      "file": "push-001.md",
+      "sha256": "92c2ebff71d1ecde14bdcd6daad78227fc4e73dd224b6129fe13321121fd4d81",
+      "sources": []
+    },
+    {
+      "id": "PUSH-002",
+      "topic": "integration",
+      "title": "消息生命周期与关联标识",
+      "file": "push-002.md",
+      "sha256": "861eaeb9a9d0fde93a2318442cf05a25d162ce2751f3f347e38260f053f575ab",
+      "sources": [
+        "https://firebase.google.com/docs/cloud-messaging/understand-delivery"
+      ]
+    },
+    {
+      "id": "PUSH-003",
+      "topic": "metrics",
+      "title": "发送到达点击的计数与比率",
+      "file": "push-003.md",
+      "sha256": "0f0800243aa67f2fea8c7e0090b8a1c3bc2b57fef48d239458845b2c9c357341",
+      "sources": [
+        "https://firebase.google.com/docs/cloud-messaging/understand-delivery"
+      ]
+    },
+    {
+      "id": "PUSH-004",
+      "topic": "metrics",
+      "title": "时间窗口设备粒度与分组比较",
+      "file": "push-004.md",
+      "sha256": "97b12603db07e8d790a0d969d9aa07147a1eea5dc4ce4f24241183617992f3bf",
+      "sources": []
+    },
+    {
+      "id": "PUSH-005",
+      "topic": "channels",
+      "title": "Android通知权限与展示排查",
+      "file": "push-005.md",
+      "sha256": "fd1fa587541d99435474da373af1100c37cfbb103560a2dd49b73e0351365702",
+      "sources": [
+        "https://developer.android.com/develop/ui/compose/notifications/notification-permission"
+      ]
+    },
+    {
+      "id": "PUSH-006",
+      "topic": "channels",
+      "title": "通道有效期与失效消息处理",
+      "file": "push-006.md",
+      "sha256": "3c55b91aae3c0a9119bb82ee8769fc0aa41363d87893af57f41406628d5b42bd",
+      "sources": [
+        "https://firebase.google.com/docs/cloud-messaging/customize-messages/setting-message-lifespan"
+      ]
+    },
+    {
+      "id": "PUSH-007",
+      "topic": "registration",
+      "title": "设备注册标识刷新与环境隔离",
+      "file": "push-007.md",
+      "sha256": "60d4be099919e424dfe29110fc3905692fecb533793c63658a69a51537dc91ec",
+      "sources": [
+        "https://firebase.google.com/docs/cloud-messaging/manage-tokens"
+      ]
+    },
+    {
+      "id": "PUSH-008",
+      "topic": "registration",
+      "title": "无效注册标识与错误回执判断",
+      "file": "push-008.md",
+      "sha256": "9501587998235d06f5c3fdf262336ea0ee98a90bbfacd0ff285eee30127118fe",
+      "sources": [
+        "https://firebase.google.com/docs/cloud-messaging/manage-tokens"
+      ]
+    },
+    {
+      "id": "PUSH-009",
+      "topic": "troubleshooting",
+      "title": "用户未收到推送的分层排查",
+      "file": "push-009.md",
+      "sha256": "c9524b075c2b981e12fc3c557bca1afc5489b7f59c64ff792c882d497c28579e",
+      "sources": [
+        "https://firebase.google.com/docs/cloud-messaging/understand-delivery",
+        "https://developer.android.com/develop/ui/compose/notifications/notification-permission"
+      ]
+    },
+    {
+      "id": "PUSH-010",
+      "topic": "troubleshooting",
+      "title": "到达比例下降的比较与归因",
+      "file": "push-010.md",
+      "sha256": "a9102d73e644d518c50af1aecd299a09f523d0b8c2c62af66c95d4ae4c7734af",
+      "sources": []
+    },
+    {
+      "id": "PUSH-011",
+      "topic": "reliability",
+      "title": "重复发送幂等与超时重试",
+      "file": "push-011.md",
+      "sha256": "8de4e737ac63e38d78c463eafb2b55b9e13797511037c9102719e0f7b2529b5d",
+      "sources": []
+    },
+    {
+      "id": "PUSH-012",
+      "topic": "reliability",
+      "title": "回执迟到重复与乱序处理",
+      "file": "push-012.md",
+      "sha256": "a78a443ea0f537de619a53d20737ce30102ae55d4d8d09a61c6a35b17207e4f8",
+      "sources": []
+    },
+    {
+      "id": "PUSH-013",
+      "topic": "review",
+      "title": "推送候选内容与文案准入流程",
+      "file": "push-013.md",
+      "sha256": "dc49257c45518b3c7dfd4ba331a115caad0faa7ade23e3e7057b97ed2f1fae98",
+      "sources": []
+    },
+    {
+      "id": "PUSH-014",
+      "topic": "review",
+      "title": "文案模板变更与审核版本一致",
+      "file": "push-014.md",
+      "sha256": "de7475e749351f2ddab6d43688f4223699cc761eeded50d31a7b7ffe200b82d3",
+      "sources": []
+    },
+    {
+      "id": "PUSH-015",
+      "topic": "release",
+      "title": "推送灰度发布与回退检查",
+      "file": "push-015.md",
+      "sha256": "f7fd3d08b8c857fae059bac7fab5fd8ba58368a485e10c1a45183a6e9f3392c8",
+      "sources": []
+    },
+    {
+      "id": "PUSH-016",
+      "topic": "release",
+      "title": "推送值守交接与复盘记录",
+      "file": "push-016.md",
+      "sha256": "a25703b00a2257f13f7b2470bb4bfd773728942d27560c13810fcb4f63eaae96",
+      "sources": []
+    },
+    {
+      "id": "PUSH-017",
+      "topic": "governance",
+      "title": "知识版本阅读权限与更新规则",
+      "file": "push-017.md",
+      "sha256": "13a440e826b0d4bbcb6c7e6d1991e6900594561f174f07ed8de9889e12be370f",
+      "sources": []
+    },
+    {
+      "id": "PUSH-018",
+      "topic": "governance",
+      "title": "知识助手与分析助手的职责边界",
+      "file": "push-018.md",
+      "sha256": "026238641994eb724de6be3cb72d20516dc81acdd3b6c8ef7da030ecae8eef7d",
+      "sources": []
+    }
+  ]
+}

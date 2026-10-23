@@ -46,7 +46,7 @@ onMounted(async () => {
   <div v-if="!ready" class="loading" role="status">正在打开知识空间…</div>
   <LoginView v-else-if="!auth.principal.value" />
   <div v-else class="workspace">
-    <header><a class="brand" href="/">知答<span>知识助手</span></a><div class="account"><span>{{ auth.principal.value.Role === 'admin' ? '管理员' : '成员' }}</span><button @click="logout">退出登录</button></div></header>
+    <header><a class="brand" href="/">知答<span>推送知识库查询助手</span></a><div class="account"><span>{{ auth.principal.value.Role === 'admin' ? '管理员' : '成员' }}</span><button @click="logout">退出登录</button></div></header>
     <main class="dashboard"><div class="welcome"><div><span class="eyebrow">你的知识空间</span><h1>从可信资料开始。</h1><p class="muted">查看可访问的知识库与最近会话。</p></div><button :disabled="busy" @click="load">{{ busy ? '正在刷新…' : '刷新资料' }}</button></div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <nav class="tabs" aria-label="工作空间"><button :aria-current="page === 'chat'" @click="page = 'chat'">知识问答</button><button :aria-current="page === 'knowledge'" @click="page = 'knowledge'">知识管理</button><button v-if="auth.principal.value.Role === 'admin'" :aria-current="page === 'access'" @click="page = 'access'">权限管理</button></nav>

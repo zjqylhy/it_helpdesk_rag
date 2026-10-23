@@ -1,0 +1,190 @@
+{
+  "schema": "push-acceptance-v1",
+  "purpose": "预先冻结的功能验收样例；非独立盲测质量集",
+  "cases": [
+    {
+      "id": "A01",
+      "topics": [
+        "integration"
+      ],
+      "question": "接口返回成功就代表用户已经看到推送通知了吗？",
+      "expected_documents": [
+        "PUSH-002"
+      ],
+      "review_points": [
+        "阶段不同",
+        "不能等同展示"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A02",
+      "topics": [
+        "metrics"
+      ],
+      "question": "模拟样本发送100次，到达80次，点击8次。两种点击率分别是多少，没到达回执的20次算失败吗？",
+      "expected_documents": [
+        "PUSH-003"
+      ],
+      "review_points": [
+        "8%",
+        "10%",
+        "未知"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A03",
+      "topics": [
+        "metrics"
+      ],
+      "question": "按厂商汇总到达比例时，能直接平均每组百分比吗？",
+      "expected_documents": [
+        "PUSH-003",
+        "PUSH-004"
+      ],
+      "review_points": [
+        "先汇总分子分母",
+        "不能平均比率"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A04",
+      "topics": [
+        "channels"
+      ],
+      "question": "Android 13中，服务端已经接受推送，为什么还要检查通知权限？",
+      "expected_documents": [
+        "PUSH-005"
+      ],
+      "review_points": [
+        "POST_NOTIFICATIONS",
+        "接受不等于展示"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A05",
+      "topics": [
+        "registration"
+      ],
+      "question": "收到FCM的INVALID_ARGUMENT就能批量删除设备token吗？",
+      "expected_documents": [
+        "PUSH-008"
+      ],
+      "review_points": [
+        "负载错误也可能",
+        "先确认目标确实失效"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A06",
+      "topics": [
+        "reliability"
+      ],
+      "question": "发送超时后，可以直接重新创建一条业务消息吗？",
+      "expected_documents": [
+        "PUSH-011"
+      ],
+      "review_points": [
+        "可能已经执行",
+        "重复风险",
+        "核对状态与幂等"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A07",
+      "topics": [
+        "review"
+      ],
+      "question": "旧模板审核通过，修改标题后能直接沿用旧版通过结果发送吗？",
+      "expected_documents": [
+        "PUSH-014"
+      ],
+      "review_points": [
+        "版本变化",
+        "重新核对审核规则"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A08",
+      "topics": [
+        "release"
+      ],
+      "question": "推送发布出问题，回滚配置是不是就能撤回所有已经展示的消息？",
+      "expected_documents": [
+        "PUSH-015"
+      ],
+      "review_points": [
+        "不能保证追回",
+        "停止新增与回滚区别"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A09",
+      "topics": [
+        "metrics",
+        "troubleshooting"
+      ],
+      "question": "到达比例下降时，比较口径与排查步骤分别应该注意什么？",
+      "expected_documents": [
+        "PUSH-004",
+        "PUSH-010"
+      ],
+      "review_points": [
+        "观察窗口",
+        "厂商与通道",
+        "结构变化不是因果"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A10",
+      "topics": [
+        "integration",
+        "governance"
+      ],
+      "question": "用户问昨天真实发送量时，接入说明和知识助手能直接给出实际数值吗？",
+      "expected_documents": [
+        "PUSH-018"
+      ],
+      "review_points": [
+        "知识没有实时数值",
+        "分析助手"
+      ],
+      "expected_status": "completed"
+    },
+    {
+      "id": "A11",
+      "topics": [
+        "governance"
+      ],
+      "question": "上海交通大学VPN服务器地址是什么？",
+      "expected_documents": [],
+      "review_points": [
+        "不在推送范围"
+      ],
+      "expected_status": "refused"
+    },
+    {
+      "id": "A12",
+      "topics": [
+        "troubleshooting"
+      ],
+      "question": "我没有收到推送，到底是什么原因？",
+      "expected_documents": [
+        "PUSH-009"
+      ],
+      "review_points": [
+        "需补充应用平台时间",
+        "不能直接确定根因"
+      ],
+      "expected_status": "clarify"
+    }
+  ]
+}
