@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from helpdesk.adapters.http.app import create_app
-from helpdesk.domain.contracts import AnswerCheck, ChatRequest, CoverageReport, PublicEvent
+from helpdesk.domain.contracts import AnswerCheck, ChatReceipt, ChatRequest, CoverageReport, PublicEvent
 from helpdesk.settings import Settings
 
 
@@ -15,6 +15,7 @@ def export(directory: Path) -> None:
         "coverage-v1": CoverageReport,
         "answer-check-v1": AnswerCheck,
         "chat-request-v1": ChatRequest,
+        "chat-receipt-v1": ChatReceipt,
         "public-event-envelope-v1": PublicEvent,
     }
     for name, model in models.items():

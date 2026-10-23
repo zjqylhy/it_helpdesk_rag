@@ -30,14 +30,13 @@ from helpdesk.application.catalog import CatalogService
 from helpdesk.application.chat import ChatService
 from helpdesk.application.conversations import ConversationService
 from helpdesk.application.identity import IdentityService, digest_token
-from helpdesk.domain.contracts import ChatRequest
+from helpdesk.domain.contracts import ChatReceipt, ChatRequest
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import Principal, Row
 from helpdesk.ports.models import Models
 from helpdesk.settings import Settings
 
 from . import inputs
-from .chat_stream import ChatResponse
 
 
 @dataclass
@@ -52,7 +51,7 @@ class Services:
 
 
 class ResponseGuard:
-    """普通响应在最终发送处复核授权；SSE 由逐事件 EventSink 单独处理。"""
+    """响应最终发送前复核授权，避免撤权前计算的正文继续写出。"""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -64,7 +63,7 @@ class ResponseGuard:
         async def guarded(message: Message) -> None:
             nonlocal start
             state = scope.get("state", {})
-            if scope["type"] != "http" or "auth_revision" not in state or state.get("owned_sse"):
+            if scope["type"] != "http" or "auth_revision" not in state:
                 await send(message)
                 return
             if message["type"] == "http.response.start":
@@ -153,6 +152,7 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
         # Linux 同样用 spawn，避免子进程继承已启动的连接池线程和网络描述符。
         cpu = ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn"))
         lease = None
+        chat_service = None
         try:
             await pool.open()
             await pool.wait(timeout=5)
@@ -193,8 +193,11 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
                     cpu,
                 ),
             )
+            chat_service = app.state.services.chat
             yield
         finally:
+            if chat_service is not None:
+                await chat_service.close()
             if lease is not None:
                 await lease.close()
                 await pool.putconn(lease)
@@ -381,23 +384,23 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
 
     @app.post(
         "/api/v1/chat",
-        response_class=Response,
-        responses={
-            200: {
-                "description": "有序 SSE 业务事件",
-                "content": {"text/event-stream": {"schema": {"type": "string"}}},
-            },
-            503: {"description": "模型尚未配置"},
-        },
+        status_code=202,
+        response_model=ChatReceipt,
+        responses={200: {"model": ChatReceipt, "description": "已受理的同一请求"}},
     )
     async def chat(body: ChatRequest, request: Request, user: User) -> Response:
         if models is None and not settings.models_ready:
             raise AppError("models_not_configured", 503, "模型服务尚未配置")
-        prepared = await services(request).chat.prepare(
+        receipt, created = await services(request).chat.submit(
             user, request.state.token, body.session_id, body.request_id, body.question
         )
-        request.state.owned_sse = True
-        return ChatResponse(services(request).chat, prepared)
+        return JSONResponse(
+            ChatReceipt.model_validate(receipt).model_dump(), status_code=202 if created else 200
+        )
+
+    @app.post("/api/v1/sessions/{session_id}/messages/{message_id}/stop")
+    async def stop_chat(session_id: str, message_id: str, request: Request, user: User) -> ChatReceipt:
+        return ChatReceipt.model_validate(await services(request).chat.stop(user, session_id, message_id))
 
     @app.get("/api/v1/admin/users")
     async def users(request: Request, user: User) -> list[Row]:

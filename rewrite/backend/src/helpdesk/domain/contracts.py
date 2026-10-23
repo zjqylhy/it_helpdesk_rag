@@ -111,10 +111,16 @@ class ChatRequest(Contract):
         return value
 
 
+class ChatReceipt(Contract):
+    message_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    status: Literal["generating", "completed", "clarify", "refused", "interrupted", "error"]
+
+
 class PublicEvent(Contract):
     event: Literal["status", "evidence", "answer_delta", "citations", "refusal", "done", "error"]
     request_id: str
     message_id: str
     seq: int = Field(ge=1)
-    # 各事件的字段投影由 M2 EventSink 实现；此处只冻结包络。
+    # 仅用于图内执行与评测；浏览器通过消息查询取得正文，不直接接收这些事件。
     data: dict[str, object]

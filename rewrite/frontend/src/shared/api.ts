@@ -2,7 +2,7 @@ export interface Principal { ID: string; Role: 'admin' | 'user' }
 export interface KnowledgeBase { id: string; name: string; organization: string; default_search: boolean }
 export interface Session { id: string; title: string; kb_ids: string[]; created_at: string }
 export interface Citation { label: string; version_id: string; chunk_id: string; title: string; organization: string; text: string; locator: Record<string, unknown> }
-export interface ChatMessage { id: string; question: string; answer: string; status: string; citations: Citation[] }
+export interface ChatMessage { id: string; request_id: string; question: string; answer: string; status: string; citations: Citation[] }
 export interface Document { id: string; title: string; enabled: boolean; active_version: string | null; job_status: string; progress: number; error: string | null }
 export interface Version { id: string; filename: string; status: string; progress: number; error: string | null; job_id: string }
 export interface User { id: string; username: string; role: string; disabled: boolean; usage_kind: 'demo' | 'real_usage' }

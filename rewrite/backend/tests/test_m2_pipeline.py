@@ -52,43 +52,47 @@ async def publish(app):
     assert await worker.once()
 
 
-def events(response):
-    return [
-        (block.splitlines()[0][7:], json.loads(block.splitlines()[1][6:]))
-        for block in response.text.strip().split("\n\n")
-        if block.startswith("event:")
-    ]
+async def wait_run(app, response):
+    assert response.status_code in (200, 202), response.text
+    task = app.state.services.chat._runs.get(response.json()["message_id"])
+    if task is not None:
+        await asyncio.wait_for(asyncio.shield(task), 20)
 
 
-async def test_real_graph_worker_sse_and_persistence(client, admin, user, document, app, database):
+async def answer(client, headers, session, response):
+    assert response.status_code in (200, 202), response.text
+    message_id = response.json()["message_id"]
+    async with asyncio.timeout(20):
+        while True:
+            history = await client.get(f"/api/v1/sessions/{session}/messages", headers=headers)
+            assert history.status_code == 200, history.text
+            message = next(m for m in history.json() if m["id"] == message_id)
+            if message["status"] != "generating":
+                return message
+            await asyncio.sleep(0.02)
+
+
+async def test_real_graph_worker_background_and_persistence(client, admin, user, document, app, database):
     await publish(app)
     await grant(client, admin, document)
     session = (
         await client.post("/api/v1/sessions", headers=user[1], json={"kb_ids": [document["kb_id"]]})
     ).json()["id"]
-    response = await client.post(
-        "/api/v1/chat",
-        headers=user[1],
-        json={"session_id": session, "request_id": "r1", "question": "如何打开设置？"},
-    )
-    assert response.status_code == 200
-    frames = events(response)
-    assert frames[-1][0] == "done", response.text
-    assert frames[-1][1]["status"] == "completed"
-    assert [d["seq"] for _, d in frames] == list(range(1, len(frames) + 1))
-    assert "".join(d["text"] for e, d in frames if e == "answer_delta") == app.state.test_models.answer
-    citations = next(d["citations"] for e, d in frames if e == "citations")
-    assert citations[0]["version_id"] == document["version_id"]
-    assert all("candidate_ids" not in json.dumps(d) for _, d in frames)
+    body = {"session_id": session, "request_id": "r1", "question": "如何打开设置？"}
+    response = await client.post("/api/v1/chat", headers=user[1], json=body)
+    assert response.status_code == 202
+    message = await answer(client, user[1], session, response)
+    assert message["status"] == "completed"
+    assert message["answer"] == app.state.test_models.answer
+    assert message["citations"][0]["version_id"] == document["version_id"]
+    assert message["trace"] == {}
+    calls = list(app.state.test_models.calls)
+    replay = await client.post("/api/v1/chat", headers=user[1], json=body)
+    assert replay.status_code == 200 and replay.json()["message_id"] == message["id"]
+    assert app.state.test_models.calls == calls
     with psycopg.connect(database) as conn:
-        assert conn.execute("SELECT status FROM messages WHERE request_id='r1'").fetchone()[0] == "completed"
-        assert conn.execute("SELECT count(*) FROM model_attempts WHERE status='completed'").fetchone()[0] >= 4
-    replay = await client.post(
-        "/api/v1/chat",
-        headers=user[1],
-        json={"session_id": session, "request_id": "r1", "question": "如何打开设置？"},
-    )
-    assert replay.status_code == 409
+        assert conn.execute("SELECT count(*) FROM messages").fetchone()[0] == 1
+        assert conn.execute("SELECT count(*) FROM model_runs WHERE message_id IS NOT NULL").fetchone()[0] == 1
 
 
 async def test_invalid_citation_ends_error_not_completed(client, admin, document, app, database):
@@ -100,22 +104,23 @@ async def test_invalid_citation_ends_error_not_completed(client, admin, document
     response = await client.post(
         "/api/v1/chat", headers=admin, json={"session_id": session, "request_id": "bad", "question": "设置？"}
     )
-    frames = events(response)
-    assert frames[-1][0] == "error" and frames[-1][1]["code"] == "invalid_citations"
-    assert not any(e == "done" for e, _ in frames)
+    await wait_run(app, response)
+    message = await answer(client, admin, session, response)
+    assert message["status"] == "error" and message["answer"] == "" and message["citations"] == []
     with psycopg.connect(database) as conn:
-        assert conn.execute("SELECT status,answer FROM messages").fetchone() == ("error", "")
         result = conn.execute(
             "SELECT manifest->'result' FROM model_runs WHERE message_id IS NOT NULL"
         ).fetchone()[0]
+        assert result["stop_reason"] == "invalid_citations"
         assert result["node_observations"]["select_context"] == "observed"
         assert result["node_observations"]["validate_citations"] == "failed"
         assert result["attempt_details"] and "private evidence" not in json.dumps(result)
-    assert "attempt_details" not in response.text and "provider_request_id" not in response.text
-    assert "node_observations" not in response.text
+    assert "attempt_details" not in json.dumps(message) and "provider_request_id" not in json.dumps(message)
 
 
-async def test_permission_change_cancels_old_graph(client, admin, user, document, app, database):
+async def test_permission_change_cancels_background_without_polling(
+    client, admin, user, document, app, database
+):
     await publish(app)
     await grant(client, admin, document)
     provider = app.state.test_models
@@ -123,21 +128,19 @@ async def test_permission_change_cancels_old_graph(client, admin, user, document
     session = (
         await client.post("/api/v1/sessions", headers=user[1], json={"kb_ids": [document["kb_id"]]})
     ).json()["id"]
-    task = asyncio.create_task(
-        client.post(
-            "/api/v1/chat",
-            headers=user[1],
-            json={"session_id": session, "request_id": "cancel", "question": "设置？"},
-        )
+    response = await client.post(
+        "/api/v1/chat",
+        headers=user[1],
+        json={"session_id": session, "request_id": "cancel", "question": "设置？"},
     )
+    assert response.status_code == 202
     await asyncio.wait_for(provider.entered.wait(), 20)
     await grant(client, admin, document, "groups")
-    response = await asyncio.wait_for(task, 10)
-    frames = events(response)
-    assert frames[-1][0] == "error"
-    assert not any(e == "answer_delta" for e, _ in frames)
+    await wait_run(app, response)
     with psycopg.connect(database) as conn:
-        assert conn.execute("SELECT status FROM messages").fetchone()[0] == "interrupted"
+        assert conn.execute("SELECT status,answer FROM messages").fetchone() == ("interrupted", "")
+    history = (await client.get(f"/api/v1/sessions/{session}/messages", headers=user[1])).json()
+    assert history[0]["status"] == "restricted" and history[0]["answer"] == ""
 
 
 async def test_unauthorized_source_never_reaches_models(client, admin, user, document, app):
@@ -149,7 +152,7 @@ async def test_unauthorized_source_never_reaches_models(client, admin, user, doc
         headers=user[1],
         json={"session_id": session, "request_id": "empty", "question": "内容？"},
     )
-    assert events(response)[-1][1]["status"] == "refused"
+    assert (await answer(client, user[1], session, response))["status"] == "refused"
     assert app.state.test_models.calls == []
 
 
@@ -362,7 +365,7 @@ async def test_scope_requires_all_over_budget_clarifies_without_retrieval(client
         headers=admin,
         json={"session_id": session, "request_id": "many", "question": "比较这些学校"},
     )
-    assert events(result)[-1][1]["status"] == "clarify"
+    assert (await answer(client, admin, session, result))["status"] == "clarify"
     assert [stage for stage, _ in app.state.test_models.calls] == ["scope"]
 
 
@@ -387,8 +390,7 @@ async def test_cross_organization_comparison_needs_each_objects_citations(client
         headers=admin,
         json={"session_id": session, "request_id": "compare", "question": "比较两所学校的操作"},
     )
-    assert events(result)[-1][0] == "error"
-    assert events(result)[-1][1]["code"] == "incomplete_comparison"
+    assert (await answer(client, admin, session, result))["status"] == "error"
 
 
 async def test_unknown_scope_id_never_becomes_retrieval_input(client, admin, document, app):
@@ -413,70 +415,8 @@ async def test_unknown_scope_id_never_becomes_retrieval_input(client, admin, doc
         headers=admin,
         json={"session_id": session, "request_id": "invalid", "question": "查询"},
     )
-    assert events(result)[-1][1]["code"] == "invalid_scope_decision"
+    assert (await answer(client, admin, session, result))["status"] == "error"
     assert [stage for stage, _ in provider.calls] == ["scope"]
-
-
-async def test_actual_send_barrier_orders_revocation(client, admin, user, document, app):
-    import time
-
-    from helpdesk.adapters.http.chat_stream import ChatResponse
-
-    await publish(app)
-    await grant(client, admin, document)
-    svc = app.state.services
-    token = user[1]["Authorization"][7:]
-    principal = await svc.identity.authenticate(token)
-    session = (
-        await client.post("/api/v1/sessions", headers=user[1], json={"kb_ids": [document["kb_id"]]})
-    ).json()["id"]
-    prepared = await svc.chat.prepare(principal, token, session, "slow-send", "如何配置？")
-    entered, release = asyncio.Event(), asyncio.Event()
-    frames = []
-
-    async def receive():
-        await asyncio.Event().wait()
-
-    async def send(message):
-        body = message.get("body", b"")
-        if b"event: answer_delta" in body and not entered.is_set():
-            entered.set()
-            await release.wait()
-        frames.append((time.monotonic(), body))
-
-    stream = asyncio.create_task(ChatResponse(svc.chat, prepared)({}, receive, send))
-    await asyncio.wait_for(entered.wait(), 15)
-    revoke = asyncio.create_task(grant(client, admin, document, "groups"))
-    await asyncio.sleep(0.1)
-    assert not revoke.done()
-    release.set()
-    await asyncio.wait_for(revoke, 5)
-    revoked_at = time.monotonic()
-    await asyncio.wait_for(stream, 10)
-    assert not any(t > revoked_at and b"event: answer_delta" in body for t, body in frames)
-    assert not any(b"event: done" in body for _, body in frames)
-
-
-async def test_failed_response_start_clears_prepared_message(client, admin, document, app, database):
-    from helpdesk.adapters.http.chat_stream import ChatResponse
-
-    svc = app.state.services
-    token = admin["Authorization"][7:]
-    principal = await svc.identity.authenticate(token)
-    session = (
-        await client.post("/api/v1/sessions", headers=admin, json={"kb_ids": [document["kb_id"]]})
-    ).json()["id"]
-    prepared = await svc.chat.prepare(principal, token, session, "broken-start", "问题")
-
-    async def receive():
-        return {"type": "http.disconnect"}
-
-    async def send(_):
-        raise BrokenPipeError()
-
-    await ChatResponse(svc.chat, prepared)({}, receive, send)
-    with psycopg.connect(database) as conn:
-        assert conn.execute("SELECT status,answer FROM messages").fetchone() == ("error", "")
 
 
 async def test_request_budget_stops_before_more_http(client, admin, document, app):
@@ -491,7 +431,7 @@ async def test_request_budget_stops_before_more_http(client, admin, document, ap
         headers=admin,
         json={"session_id": session, "request_id": "one-call", "question": "操作方法"},
     )
-    assert events(response)[-1][1]["code"] == "budget_exhausted"
+    assert (await answer(client, admin, session, response))["status"] == "error"
     assert [stage for stage, _ in app.state.test_models.calls] == ["embedding"]
 
 

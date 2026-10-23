@@ -21,6 +21,8 @@ docker compose --env-file .env.python -p it-helpdesk-python up --no-build -d --w
 
 正式域名、Caddy 系统服务、证书维护及 Web 独立更新见 [公网 HTTPS 维护](public-https.md)。
 
+既有正式服务器已部署 [问答后台执行与页面恢复版本](chat-reconnect-deployment-20261023.md)。维护该环境时必须保留 `compose.yaml`、`compose.server.yaml`、`compose.public-https.yaml`、`compose.chat-reconnect.yaml` 四个配置文件；上面的新环境命令不能直接用于替换正式环境。页面断开不取消问答，API 停止或重启仍会中断未完成任务，维护前应先等待在途任务完成。
+
 模型端点和凭据通过 `.env.python` 注入。当前正式 API、Worker 统一使用 `https://api.linhengyi.xyz/v1`，三类完整端点、空连接覆盖与系统证书设置见 [模型网关维护](model-gateway-domain.md)。独立环境若仍使用私有隧道，可通过 `HD_MODEL_CONNECT_HOST=host.docker.internal` 保留逻辑 Host/SNI，并将私有 CA 放在 `deploy/certs/`，容器路径为 `/run/certs/文件名`；不能将该旧设置直接套用到正式公网域名。配置完整后显式开启 `HD_MODEL_INFERENCE_ENABLED=true`。旧内部令牌与服务转发地址不再使用。
 
 ## 旧数据迁移

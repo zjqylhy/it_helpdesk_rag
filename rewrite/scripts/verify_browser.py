@@ -68,6 +68,7 @@ def main():
                    HD_API_TARGET=f'http://127.0.0.1:{api_port}',HD_WEB_TARGET=f'http://127.0.0.1:{web_port}',
                    HD_QA_ARTIFACTS=str(output),PYTHONIOENCODING='utf-8')
         model_url=f'http://127.0.0.1:{models.server_port}'
+        env['HD_QA_MODEL_TARGET'] = model_url
         env.update(HD_CHAT_URL=model_url+'/chat', HD_EMBEDDING_URL=model_url+'/embed',HD_RERANK_URL=model_url+'/rank',
                    HD_CHAT_MODEL='fixture-chat',HD_EMBEDDING_MODEL='fixture-embed',HD_RERANK_MODEL='fixture-rank',
                    HD_RERANK_FORMAT='generic',HD_EMBEDDING_DIMENSION='3',HD_MODEL_INFERENCE_ENABLED='true')

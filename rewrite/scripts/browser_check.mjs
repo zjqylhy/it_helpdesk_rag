@@ -23,7 +23,7 @@ async function checkFiling(page, label) {
 }
 let page
 try {
-  page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  page = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage()
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(process.env.HD_WEB_TARGET)
   await page.getByLabel('用户名').waitFor()
@@ -53,12 +53,85 @@ try {
   const downloaded = page.waitForEvent('download')
   await page.getByRole('button', { name: '下载引用原文' }).click()
   await downloaded
-  checks.push('POST SSE answer and authorized citation download')
+  checks.push('async answer polling and authorized citation download')
   await page.getByLabel('你的问题').fill('请测试中断回答')
   await page.getByRole('button', { name: '发送问题', exact: true }).click()
   await page.getByRole('button', { name: '停止回答', exact: true }).click()
-  await page.getByRole('alert').filter({ hasText: '已停止回答' }).waitFor()
-  checks.push('client cancellation')
+  await page.getByText('回答已中断', { exact: true }).waitFor()
+  checks.push('explicit background task cancellation')
+  const recoveryQuestions = []
+  function currentArticle(question) { return page.locator('article.message').filter({ has: page.getByRole('heading', { name: question, exact: true }) }) }
+  async function startSlow(question) {
+    recoveryQuestions.push(question)
+    await page.getByLabel('你的问题').fill(question)
+    await page.getByRole('button', { name: '发送问题', exact: true }).click()
+    await currentArticle(question).getByText('正在生成', { exact: true }).waitFor()
+  }
+  async function finished(question) {
+    await currentArticle(question).getByText('回答完成', { exact: true }).waitFor()
+    if (await currentArticle(question).locator('.answer').innerText() !== '请打开设置 [C1]。') throw Error('Recovered answer duplicated or incomplete')
+  }
+  await startSlow('后台执行：切换页面')
+  await page.getByRole('button', { name: '知识管理', exact: true }).click()
+  await page.getByRole('heading', { name: '知识资料', exact: true }).waitFor()
+  await page.getByRole('button', { name: '知识问答', exact: true }).click()
+  await finished('后台执行：切换页面')
+  checks.push('navigation does not cancel background generation')
+  await startSlow('后台执行：切换会话')
+  const originalSessionButton = await page.locator('.session-list button[aria-current="true"]').elementHandle()
+  await page.getByRole('button', { name: '新建会话', exact: true }).click()
+  await page.waitForFunction(() => {
+    const field = document.querySelector('#question')
+    return field && !field.disabled
+  })
+  await page.getByLabel('你的问题').fill('新会话的设置方法')
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  await finished('新会话的设置方法')
+  await originalSessionButton.click()
+  await finished('后台执行：切换会话')
+  checks.push('switching conversations can submit independently and resume original task')
+  await startSlow('后台执行：刷新页面')
+  await page.reload()
+  await finished('后台执行：刷新页面')
+  checks.push('reload resumes viewing original message')
+  await startSlow('后台执行：短暂断网')
+  await page.context().setOffline(true)
+  await page.getByRole('alert').filter({ hasText: '连接中断' }).waitFor()
+  await page.context().setOffline(false)
+  await finished('后台执行：短暂断网')
+  checks.push('offline and online only affect polling')
+  await startSlow('后台执行：关闭标签页')
+  const context = page.context()
+  await page.close()
+  page = await context.newPage()
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto(process.env.HD_WEB_TARGET)
+  await page.getByLabel('用户名').fill('qa-admin')
+  await page.getByLabel('密码', { exact: true }).fill('QaAdminTest123!')
+  await page.getByRole('button', { name: '进入工作台' }).click()
+  await finished('后台执行：关闭标签页')
+  checks.push('closed tab can reopen original running message')
+  const lostAck = '后台执行：受理回执丢失'
+  await page.route('**/api/v1/chat', async route => {
+    const result = await route.fetch()
+    if (route.request().postDataJSON().question === lostAck) {
+      if (result.status() !== 202) throw Error('Expected admission before losing acknowledgement')
+      await route.abort('failed')
+    } else await route.fulfill({ response: result })
+  })
+  recoveryQuestions.push(lostAck)
+  await page.getByLabel('你的问题').fill(lostAck)
+  await page.getByRole('button', { name: '发送问题', exact: true }).click()
+  await finished(lostAck)
+  await page.unroute('**/api/v1/chat')
+  checks.push('lost acknowledgement recovers same request')
+  const stats = await (await fetch(process.env.HD_QA_MODEL_TARGET + '/stats')).json()
+  for (const question of recoveryQuestions) {
+    const count = Object.entries(stats.generation_counts).filter(([key]) => key.includes(question)).reduce((sum, [, n]) => sum + n, 0)
+    if (count !== 1) throw Error(`Recovery repeated inference: ${question}: ${count}`)
+  }
+  checks.push('each recovery case generated exactly once')
+  await page.screenshot({ path: folder + '/chat-recovered-desktop.png', fullPage: true })
   await page.getByRole('button', { name: '知识管理', exact: true }).click()
   await page.getByLabel('知识库名称', { exact: true }).fill('浏览器测试库')
   await page.getByLabel('所属组织', { exact: true }).fill('合成浏览器组织')
@@ -131,7 +204,7 @@ try {
   await writeFile(folder + '/browser-check.json', JSON.stringify({ checks, page_errors: errors, viewport: [1440,1000], mobile: [390,844] }, null, 2))
   console.log(JSON.stringify({ browser_checks: checks.length, page_errors: errors.length }))
 } catch (error) {
-  if (page) {
+  if (page && !page.isClosed()) {
     await page.screenshot({ path: folder + '/failure.png', fullPage: true })
     console.error(JSON.stringify({ page_errors: errors, text: await page.locator('body').innerText(), checks }))
   }

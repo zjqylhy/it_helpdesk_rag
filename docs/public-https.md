@@ -38,7 +38,7 @@ Caddy 自动续期依赖持续有效的 DNS、服务器出网、校验端口和�
 
 ## Web 独立发布与回退
 
-本次只更新前端镜像。生产基础文件仍在 `/opt/it-helpdesk-rag-python-20261018/source`，Compose 项目固定为 `it-helpdesk-python`。后端镜像保持原版本；新 Web 镜像单独标记前端提交号，并通过附加 Compose 文件指定。今后维护命令须包含所有已生效的覆盖文件，不能只用原基础文件启动而回到旧 Web。
+首次公网 HTTPS 发布只更新前端镜像；2026-10-23 已协调更新 API、Worker 和 Web，当前镜像及回退说明见 [问答恢复部署记录](chat-reconnect-deployment-20261023.md)。生产基础文件仍在 `/opt/it-helpdesk-rag-python-20261018/source`，Compose 项目固定为 `it-helpdesk-python`。维护命令须按顺序携带 `compose.yaml`、`compose.server.yaml`、`compose.public-https.yaml`、`compose.chat-reconnect.yaml`，不能只用基础文件启动而恢复旧镜像。
 
 更新前记录所有正式容器 ID、运行镜像及原覆盖文件；新镜像先在仅回环的预览端口校验，再使用 `up --no-build --no-deps -d --wait web` 更新正式 Web。镜像与实际生效的覆盖文件路径见本次部署记录。构建受限时可复用已验证 Node/nginx 基础镜像，仍对新源码执行测试、类型检查和构建。
 
@@ -46,6 +46,6 @@ Caddy 自动续期依赖持续有效的 DNS、服务器出网、校验端口和�
 
 ## 验证范围
 
-先用隔离数据库和模拟模型进行浏览器回归，验证登录前后备案号、桌面/手机布局、权限、历史和文件下载，以及逐段响应和停止操作。公网验证域名、可信证书、HTTP 跳转、页面与静态资源、未登录受保护接口和服务重启恢复。真实生产账号流程与真实问答按部署记录分别列出已验证和待人工验收项；本轮代理发起的付费模型请求数为 0。
+先用隔离数据库和模拟模型进行浏览器回归，验证登录前后备案号、桌面/手机布局、权限、历史和文件下载，以及轮询进度、页面恢复和主动停止。公网验证域名、可信证书、HTTP 跳转、页面与静态资源、未登录受保护接口和账号自身认证。真实生产账号流程与真实问答按部署记录分别列出已验证和待人工验收项；本轮代理发起的付费模型请求数为 0。
 
 官方依据：[自动 HTTPS](https://caddyserver.com/docs/automatic-https)、[系统服务](https://caddyserver.com/docs/running)、[流式代理](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#streaming)。
