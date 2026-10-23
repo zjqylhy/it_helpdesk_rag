@@ -15,7 +15,7 @@ async function submit() {
 
 <template>
   <main class="login-layout">
-    <section class="intro"><span class="eyebrow">知答 / KNOWLEDGE ASSISTANT</span><h1>让知识，<br>成为可靠的答案。</h1><p>在授权的资料范围内查找信息，<br>让每个回答都有出处。</p></section>
+    <section class="intro"><span class="eyebrow">知答 / 推送知识库查询助手</span><h1>推送知识，<br>有据可查。</h1><p>查阅推送接入说明、指标口径与排查经验，<br>让每个回答都有出处。</p></section>
     <form class="login-card" @submit.prevent="submit">
       <span class="eyebrow">欢迎回来</span><h2>登录知识空间</h2>
       <label for="username">用户名</label><input id="username" v-model="username" autocomplete="username" required maxlength="100">

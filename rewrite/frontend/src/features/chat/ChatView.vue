@@ -127,7 +127,7 @@ const statusNames: Record<string, string> = { completed: '回答完成', partial
         <details v-for="citation in item.citations" :key="citation.label"><summary>{{ citation.label }} · {{ citation.organization }} · {{ citation.title }}</summary><blockquote>{{ citation.text }}</blockquote><p class="small">位置：{{ JSON.stringify(citation.locator) }}</p><button @click="getFile(citation.version_id)">下载引用原文</button></details>
       </article>
       <p v-if="busy" role="status" class="muted">正在生成，可切换页面，返回后继续查看</p>
-      <form class="composer" @submit.prevent="send"><label for="question">你的问题</label><textarea id="question" v-model="question" :disabled="busy || sending || loading" maxlength="8000" placeholder="例如：某学校的 VPN 如何登录？" rows="3" required></textarea><div class="actions"><button v-if="busy" type="button" :disabled="stopping" @click="stopAnswer">停止回答</button><button v-else type="submit" :disabled="sending || loading || !question.trim()">发送问题</button><button type="button" :disabled="!selected" @click="poller.refresh()">刷新历史</button></div></form>
+      <form class="composer" @submit.prevent="send"><label for="question">你的问题</label><textarea id="question" v-model="question" :disabled="busy || sending || loading" maxlength="8000" placeholder="例如：推送接口返回成功，为什么用户仍未看到通知？" rows="3" required></textarea><div class="actions"><button v-if="busy" type="button" :disabled="stopping" @click="stopAnswer">停止回答</button><button v-else type="submit" :disabled="sending || loading || !question.trim()">发送问题</button><button type="button" :disabled="!selected" @click="poller.refresh()">刷新历史</button></div></form>
     </section>
   </div>
 </template>
