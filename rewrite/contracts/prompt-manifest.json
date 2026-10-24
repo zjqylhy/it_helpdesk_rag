@@ -1,12 +1,13 @@
 {
-  "source_revision": "f89000c",
-  "source_kind": "frozen literal prompt assets only; no imported runtime code",
+  "prompt_version": "push-domain-v1",
+  "source_kind": "current push-domain literal prompts; legacy IT manifest retained separately",
+  "legacy_manifest": "prompt-manifest-legacy-it.json",
   "sha256": {
-    "answer": "78df0e826f7360673fd23c38a0ddcf89259f44aa3dc6f4afa7004ed7864eca18",
-    "comparison_suffix": "73cabcb5c43048d0f5f288ce66480f4c72db6c8a8572e901bf4aaf7b7c70d49f",
-    "sufficiency": "1a0b831eb177453f6111be3dd185494264f42fea0ec0ae4d326f4aa31504e6df",
-    "split": "d89584666af9dcd59196f203b9e1392b6c9c473f58c92b7011176b0f3424800d",
-    "rewrite": "42dac9ff9cc0ab7c549cf4904636f7b06ba65cae5e7ee326d0291325740223b0",
-    "scope": "fa177a8e30e282c5d9f3aaae06d11e0089d91f9bbc94c6f5dab3d2fc8c6a46c9"
+    "answer": "123922355ab4648ac33a351ea0c5611ca80f6158d281587e62fade75cba4a994",
+    "comparison_suffix": "240b24d9f71793389cdfdb77a70cb3c84d4a15947548da993dedbc273c5ee1af",
+    "sufficiency": "f7e4254c65f0d47f7aadf7f54f4ab3c83d5399818353143d4e01435995ab0eb1",
+    "split": "6e5123d4185b29bc3b8685de5664834619a9b2f3af06867b7b983994f364c30f",
+    "rewrite": "59ae9a8129283be30d6b434615d045da569ea97e037627bdfe44a0270b10f18d",
+    "scope": "481b04ab709a86349d854f9948a1e62bae79f37339784aa1cae0fccff2310105"
   }
 }

@@ -53,7 +53,7 @@ def handler(fixture, calls):
                     "route_ids", [k["id"] for k in payload["available_knowledge_bases"]]
                 ),
                 "requires_all": fixture.get("requires_all", False),
-                "message": "请明确适用学校。",
+                "message": "请补充推送应用、平台或通道。",
                 "option_ids": [],
             }
         elif "history" in payload:

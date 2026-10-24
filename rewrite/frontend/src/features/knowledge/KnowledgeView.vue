@@ -61,7 +61,7 @@ onBeforeUnmount(() => { stopped = true; ++generation; clearTimeout(timer) })
 <template>
   <section class="panel"><div class="section-heading"><h2>知识资料</h2><span class="count">{{ knowledge.length }}</span></div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <form v-if="admin" class="inline-form" @submit.prevent="createKB"><input v-model="name" aria-label="知识库名称" placeholder="知识库名称" required maxlength="200"><input v-model="organization" aria-label="所属组织" placeholder="所属组织 / 学校" required maxlength="200"><button :disabled="busy">新建知识库</button></form>
+    <form v-if="admin" class="inline-form" @submit.prevent="createKB"><input v-model="name" aria-label="知识库名称" placeholder="推送知识主题，如通道接入" required maxlength="200"><input v-model="organization" aria-label="适用业务范围" placeholder="适用业务范围，如推送业务部门" required maxlength="200"><button :disabled="busy">新建知识库</button></form>
     <label for="knowledge">选择知识库</label><select id="knowledge" v-model="kbId" :disabled="busy" @change="load"><option value="">请选择</option><option v-for="kb in knowledge" :key="kb.id" :value="kb.id">{{ kb.name }} · {{ kb.organization }}</option></select>
     <p v-if="!knowledge.length" class="empty">还没有可访问的资料，请联系管理员分配权限。</p>
     <div v-if="admin && kbId" class="actions"><button :disabled="busy" @click="defaultSearch">{{ knowledge.find(k => k.id === kbId)?.default_search ? '移出默认问答范围' : '加入默认问答范围' }}</button></div>

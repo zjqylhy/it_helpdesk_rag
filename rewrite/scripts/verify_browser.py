@@ -84,7 +84,7 @@ def main():
             headers={'Authorization':'Bearer '+token}
             client.post('/api/v1/admin/users',headers=headers,json={'username':'qa-user','password':'QaUserTest123!'}).raise_for_status()
             for title in ['公开知识库','受限知识库']:
-                kb=client.post('/api/v1/knowledge-bases',headers=headers,json={'name':title,'organization':'合成测试学校'}).json()
+                kb=client.post('/api/v1/knowledge-bases',headers=headers,json={'name':title,'organization':'推送业务示例部门'}).json()
                 doc=client.post('/api/v1/documents',headers=headers,data={'kb_id':kb['id'],'title':'测试文档'},files={'file':('example.txt',title.encode())}).json()
                 if title=='公开知识库':
                     client.put('/api/v1/admin/documents/'+doc['document_id']+'/access',headers=headers,

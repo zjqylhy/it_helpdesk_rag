@@ -20,11 +20,11 @@ def proposal(cases: list[EvalCase], bundle: Row) -> Row:
         query = (
             case.question
             if len(members) != 1
-            else f"适用组织：{members[0]['organization']}\n问题：{case.question}"
+            else f"适用业务范围：{members[0]['organization']}\n问题：{case.question}"
         )
         upper_texts = sorted(
             [
-                f"知识库：{c['knowledge_base_name']}；适用组织：{c['organization']}；文档：{c['title']}\n{c['text']}"
+                f"知识库：{c['knowledge_base_name']}；适用业务范围：{c['organization']}；文档：{c['title']}\n{c['text']}"
                 for c in chunks
             ],
             key=lambda s: len(s.encode()),

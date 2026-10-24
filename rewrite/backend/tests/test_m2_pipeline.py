@@ -365,7 +365,10 @@ async def test_scope_requires_all_over_budget_clarifies_without_retrieval(client
         headers=admin,
         json={"session_id": session, "request_id": "many", "question": "比较这些学校"},
     )
-    assert (await answer(client, admin, session, result))["status"] == "clarify"
+    message = await answer(client, admin, session, result)
+    assert message["status"] == "clarify"
+    assert "最多 5 个主题" in message["answer"] and "库0" in message["answer"]
+    assert "学校" not in message["answer"] and "发生时间" not in message["answer"]
     assert [stage for stage, _ in app.state.test_models.calls] == ["scope"]
 
 

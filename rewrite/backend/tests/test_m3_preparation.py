@@ -54,11 +54,11 @@ def test_docker_gateway_retains_logical_host_and_sni():
     assert extensions["sni_hostname"] == "localhost"
 
 
-async def test_frozen_scope_wire_contract(monkeypatch):
+async def test_frozen_push_wire_contract(monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "rewrite/scripts"))
     harness = importlib.import_module("check_graph_protocol")
     frozen = json.loads(
-        (Path(__file__).parent / "fixtures/scope-wire-expected.json").read_text(encoding="utf-8")
+        (Path(__file__).parent / "fixtures/push-wire-expected.json").read_text(encoding="utf-8")
     )
     actual = await harness.current(harness.inputs())
     assert actual == frozen["results"]
