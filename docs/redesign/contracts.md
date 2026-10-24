@@ -8,6 +8,7 @@
 | --- | --- |
 | Principal | user_id、role、disabled、usage_kind；只来自可信 Python Identity 用例与数据库，不能信任浏览器透传 |
 | AuthorizedScope | 请求的 all/selected 范围、实际 kb_ids、snapshot_members、authorized_version_ids、authorization_revision、scope_hash |
+| RunAuthorization / RunDependencies | 原始候选范围与启动版本保持不变；实际使用的版本、知识库元数据及选入历史来源累积为依赖；当前权限复核失败才停止相应运行，细则见[授权变更规格](selective-authorization/spec.md) |
 | QueryPlan | 原问题、独立 query、组织/年份条件、tasks、实际 retrieval_queries、query_strategy、prompt_hash |
 | Task | task_id、原问题要求、组织/条件、必须回答项；最多两个独立任务，不能将模型臆造要求纳入 |
 | Evidence | chunk_id、version_id、document_id、kb_id、原文 text、locator、content_hash；必须属于 AuthorizedScope |

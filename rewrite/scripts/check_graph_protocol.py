@@ -98,6 +98,9 @@ async def current(fixtures):
     from helpdesk.settings import Settings
 
     class Corpus:
+        async def metadata(self, principal, scope):
+            return scope
+
         async def check(self, *_):
             pass
 

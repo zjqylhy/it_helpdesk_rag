@@ -138,6 +138,8 @@ class ModelSession:
                 output_source="not_applicable" if route_kind(stage) != "chat" else None,
             )
             try:
+                # 账本写入可能等待数据库；发送前必须再次检查期间发生的撤权。
+                await self.guard()
                 async with asyncio.timeout(min(25, self.budget.remaining())):
                     value, usage = await operation()
                 observed_usage = usage
@@ -189,6 +191,7 @@ class ModelSession:
         finish = None
         total = 0
         try:
+            await self.guard()
             async with asyncio.timeout(min(25, self.budget.remaining())):
                 async for chunk in self.provider.generate(system, payload, 2048):
                     await self.guard()

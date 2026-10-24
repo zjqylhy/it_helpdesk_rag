@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
+from dataclasses import asdict, replace
 from importlib.metadata import version
 from multiprocessing import get_context
 from pathlib import Path
@@ -49,10 +50,50 @@ from helpdesk.settings import Settings
 
 PACKAGE = Path(__file__).resolve().parents[1]
 EVAL_PROTOCOL = {
+    "authorization": "frozen-input-permissions-v1",
     "retry": "bounded-retry-after-v1",
     "trace": "observed-stages-v1",
     "usage": "independent-axes-v1",
 }
+
+
+def scope_identity(scope: BoundScope) -> str:
+    """实验输入身份不包含无关的全局授权版本；原始版本仍保存在 manifest。"""
+    return fingerprint({"kb_ids": scope.kb_ids, "knowledge_bases": scope.knowledge_bases,
+                        "versions": scope.version_ids, "snapshots": scope.snapshots})
+
+
+def restore_scope(value: Row) -> BoundScope:
+    return BoundScope(tuple(value["kb_ids"]), tuple(value["knowledge_bases"]),
+                      tuple(value["version_ids"]), tuple(value["snapshots"]),
+                      value["revision"], value["scope_hash"])
+
+
+async def check_frozen_input(
+    corpus: PostgresCorpus, current: Principal, scope: BoundScope, expected_hash: str,
+) -> None:
+    # 评测不共享 API 的进程锁；短暂持有授权行共享锁，避免一次复核读到半新半旧策略。
+    async with corpus.pool.connection() as conn:
+        await conn.execute("SELECT revision FROM authorization_state WHERE id=1 FOR SHARE")
+        await _compare_frozen_input(corpus, current, scope, expected_hash)
+
+
+async def _compare_frozen_input(
+    corpus: PostgresCorpus, current: Principal, scope: BoundScope, expected_hash: str,
+) -> None:
+    await corpus.check(current, scope)
+    live = await corpus.bind(current, scope.kb_ids, scope.revision)
+    # 增权不扩大冻结输入；只比较原始候选范围内的身份和版本。
+    bounded = replace(
+        live, kb_ids=scope.kb_ids,
+        knowledge_bases=tuple(k for k in live.knowledge_bases if k["id"] in scope.kb_ids),
+        version_ids=tuple(v for v in live.version_ids if v in scope.version_ids),
+        snapshots=tuple(s for s in live.snapshots if s["kb_id"] in scope.kb_ids),
+    )
+    if scope_identity(bounded) != scope_identity(scope) or fingerprint(
+        await corpus.export(current, scope)
+    ) != expected_hash:
+        raise AppError("evaluation_input_changed", 409, "冻结评测输入已变化")
 
 
 def validate_rate_profile(value: Row, settings: Settings) -> RateProfile:
@@ -166,7 +207,7 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
         raise ValueError("实验组不能重复")
     if variants != ["D"] and any(c.scope_mode == "default" or len(c.kb_ids) != 1 for c in cases):
         raise ValueError("A/B/C/D 协议仅用于单库；跨库使用 D 的 baseline/split-v1")
-    scopes, chunks = {}, {}
+    scopes, bindings, chunks = {}, {}, {}
     async with dependencies(settings) as (pool, corpus, uow):
         principal, revision = await identity(uow)
         for case in cases:
@@ -177,7 +218,8 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
             for group in case.evidence_groups:
                 if any(not covered(anchor, exported) for anchor in group):
                     raise ValueError(f"题目 {case.id} 的黄金出处无法在当前授权切片中完整核对")
-            scopes[case.id] = scope.scope_hash
+            scopes[case.id] = scope_identity(scope)
+            bindings[case.id] = asdict(scope)
             chunks[case.id] = exported
     # 目录只在全部输入校验通过后独占创建，禁止覆盖已有实验和旧报告。
     args.out.mkdir(parents=True, exist_ok=False)
@@ -199,8 +241,10 @@ async def freeze(args: argparse.Namespace, settings: Settings) -> None:
         "source_scope_version": source_bundle["scope_version"] if source_bundle else None,
         "rebind_approval_sha256": approval_hash,
         "subject_id": principal.user_id,
+        "subject_role": principal.role,
         "authorization_revision": revision,
         "scopes": scopes,
+        "scope_bindings": bindings,
         "cases_hash": fingerprint(cases_data),
         "corpus_hash": fingerprint(chunks),
         "code_hash": code_hash(PACKAGE),
@@ -327,15 +371,15 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
             model_client(settings) as client,
         ):
             principal, revision = await identity(uow)
-            if principal.user_id != manifest["subject_id"] or revision != manifest["authorization_revision"]:
-                raise ValueError("评测主体或权限版本变化，停止运行")
+            if (principal.user_id != manifest["subject_id"]
+                    or principal.role != manifest["subject_role"]):
+                raise ValueError("评测主体变化，停止运行")
             scopes = {}
             for case in cases.values():
-                scope = await corpus.bind(principal, tuple(case.kb_ids), revision)
-                if scope.scope_hash != manifest["scopes"][case.id] or fingerprint(
-                    await corpus.export(principal, scope)
-                ) != fingerprint(chunks[case.id]):
-                    raise ValueError("知识快照、活动版本或内容漂移，停止运行")
+                scope = restore_scope(manifest["scope_bindings"][case.id])
+                if scope_identity(scope) != manifest["scopes"][case.id]:
+                    raise ValueError("冻结范围记录不一致")
+                await check_frozen_input(corpus, principal, scope, fingerprint(chunks[case.id]))
                 scopes[case.id] = scope
             if not args.execute:
                 print(
@@ -378,11 +422,19 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
                     continue
                 case, scope = cases[arm["case_id"]], scopes[arm["case_id"]]
 
-                async def guard(bound: BoundScope = scope) -> None:
-                    current, current_revision = await identity(uow)
-                    if current != principal or current_revision != revision:
-                        raise AppError("authorization_changed", 409, "评测主体权限已变化")
-                    await corpus.check(current, bound)
+                async def guard(bound: BoundScope = scope, expected: str = fingerprint(chunks[case.id])) -> None:
+                    try:
+                        async with asyncio.timeout(5):
+                            current, _ = await identity(uow)
+                            if current.user_id != principal.user_id or current.role != principal.role:
+                                raise AppError("authorization_changed", 409, "评测主体已变化")
+                            await check_frozen_input(corpus, current, bound, expected)
+                    except ValueError as error:
+                        raise AppError("authorization_changed", 409, "评测身份已失效") from error
+                    except AppError:
+                        raise
+                    except Exception as error:
+                        raise AppError("authorization_check_failed", 503, "评测权限检查失败") from error
 
                 started_at = time.monotonic()
                 first_text = None
@@ -457,6 +509,8 @@ async def execute(args: argparse.Namespace, settings: Settings) -> None:
                 if result.get("stop_reason") in {
                     "experiment_budget_exhausted",
                     "authorization_changed",
+                    "authorization_check_failed",
+                    "evaluation_input_changed",
                     "rate_clock_changed",
                     "rate_state_invalid",
                 }:

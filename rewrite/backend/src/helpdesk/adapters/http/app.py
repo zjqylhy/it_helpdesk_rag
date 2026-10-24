@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 import psycopg
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -90,10 +91,21 @@ class ResponseGuard:
                     response = JSONResponse({"error": "登录已失效", "code": "unauthorized"}, status_code=401)
                     await response(scope, receive, send)
                 elif revision != state["auth_revision"]:
-                    response = JSONResponse(
-                        {"error": "权限已变化，请重试", "code": "authorization_changed"}, status_code=409
-                    )
-                    await response(scope, receive, send)
+                    if state.get("identity_only") or start["status"] >= 400:
+                        async with asyncio.timeout(5):
+                            await send(start)
+                            await send({"type": "http.response.body", "body": b"".join(chunks)})
+                    elif "refresh_response" in state:
+                        body = await state["refresh_response"](principal)
+                        async with asyncio.timeout(5):
+                            await JSONResponse(jsonable_encoder(body), status_code=start["status"])(
+                                scope, receive, send
+                            )
+                    else:
+                        response = JSONResponse(
+                            {"error": "权限已变化，请重试", "code": "authorization_changed"}, status_code=409
+                        )
+                        await response(scope, receive, send)
                 else:
                     # 有界网络写出避免慢客户端长期阻塞撤权。
                     async with asyncio.timeout(5):
@@ -261,7 +273,10 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
 
     @app.post("/api/v1/auth/logout")
     async def logout(request: Request, user: User) -> Response:
-        await services(request).identity.logout(request.state.token)
+        svc = services(request)
+        async with svc.barrier.write():
+            await svc.identity.logout(request.state.token)
+            await svc.barrier.recheck()
         # 本请求主动注销，返回空正文，不再尝试用旧 Token 复核。
         del request.state.auth_revision
         return Response(status_code=204)
@@ -380,6 +395,10 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
 
     @app.get("/api/v1/sessions/{session_id}/messages")
     async def messages(session_id: str, request: Request, user: User) -> list[Row]:
+        async def refresh(current: Principal) -> list[Row]:
+            return await services(request).conversations.history(current, session_id)
+
+        request.state.refresh_response = refresh
         return await services(request).conversations.history(user, session_id)
 
     @app.post(
@@ -389,6 +408,8 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
         responses={200: {"model": ChatReceipt, "description": "已受理的同一请求"}},
     )
     async def chat(body: ChatRequest, request: Request, user: User) -> Response:
+        # 回执只包含本人的请求标识和状态，不携带资料或回答正文。
+        request.state.identity_only = True
         if models is None and not settings.models_ready:
             raise AppError("models_not_configured", 503, "模型服务尚未配置")
         receipt, created = await services(request).chat.submit(
@@ -400,6 +421,7 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
 
     @app.post("/api/v1/sessions/{session_id}/messages/{message_id}/stop")
     async def stop_chat(session_id: str, message_id: str, request: Request, user: User) -> ChatReceipt:
+        request.state.identity_only = True
         return ChatReceipt.model_validate(await services(request).chat.stop(user, session_id, message_id))
 
     @app.get("/api/v1/admin/users")
@@ -413,7 +435,7 @@ def create_app(settings: Settings, models: Models | None = None) -> FastAPI:
             await svc.identity.create(user, body.username, body.password, body.role, body.usage_kind)
             async with svc.uow() as repos:
                 revision = await repos.access.revision()
-            svc.barrier.revoke(revision)
+            await svc.barrier.recheck()
             request.state.auth_revision = revision
         return Response(status_code=204)
 

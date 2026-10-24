@@ -1,6 +1,7 @@
 import psycopg
 from psycopg_pool import AsyncConnectionPool
 
+from helpdesk.application.authorization import RunDependencies
 from helpdesk.domain.errors import AppError
 from helpdesk.domain.models import Principal, Row
 from helpdesk.domain.rag import BoundScope
@@ -21,37 +22,40 @@ class ChatStore:
         question: str,
         scope: BoundScope,
         strategy: str,
-    ) -> tuple[Row, list[Row]]:
+    ) -> tuple[Row, list[Row], Row]:
         async with self.pool.connection() as conn:
             repo = Conversations(conn)
             row, created = await repo.admit(session_id, request_id, question, principal)
             if not created:
                 raise AppError("request_replayed", 409, "该请求已处理，请刷新会话历史")
-            await conn.execute(
-                "UPDATE messages SET provenance=%s,strategy_version=%s WHERE id=%s",
-                (jsonb(self.provenance(scope)), strategy, row["id"]),
-            )
-            history = []
+            selected = []
             for message in await repo.messages(session_id):
                 if message["status"] in {"completed", "clarify"} and await repo.provenance_visible(
                     principal, message["provenance"]
                 ):
-                    history.extend(
-                        [
-                            {"role": "user", "content": message["question"]},
-                            {"role": "assistant", "content": message["answer"]},
-                        ]
-                    )
-            return row, history[-8:]
+                    selected.append(message)
+            history = []
+            dependencies = RunDependencies()
+            for message in selected[-4:]:
+                dependencies.include(message["provenance"])
+                dependencies.history_ids.add(message["id"])
+                history.extend(
+                    [
+                        {"role": "user", "content": message["question"]},
+                        {"role": "assistant", "content": message["answer"]},
+                    ]
+                )
+            provenance = dependencies.provenance(scope)
+            await conn.execute(
+                "UPDATE messages SET provenance=%s,strategy_version=%s WHERE id=%s",
+                (jsonb(provenance), strategy, row["id"]),
+            )
+            return row, history, provenance
 
-    def provenance(self, scope: BoundScope) -> Row:
-        return {
-            "kb_ids": list(scope.kb_ids),
-            "version_ids": list(scope.version_ids),
-            "snapshot_members": list(scope.snapshots),
-            "authorization_revision": scope.revision,
-            "scope_hash": scope.scope_hash,
-        }
+    async def save_provenance(self, message_id: str, provenance: Row) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute("UPDATE messages SET provenance=%s WHERE id=%s AND status='generating'",
+                               (jsonb(provenance), message_id))
 
     async def finish(
         self, message_id: str, status: str, answer: str, citations: list[Row], trace: Row
