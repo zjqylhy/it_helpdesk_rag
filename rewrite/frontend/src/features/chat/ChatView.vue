@@ -122,7 +122,7 @@ const statusNames: Record<string, string> = { completed: '回答完成', partial
     <section class="panel chat-main">
       <h2>知识问答</h2><p class="muted small">回答依据当前授权资料，切换范围请新建会话。</p>
       <p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="loading" role="status">正在加载历史…</p>
-      <div v-if="!messages.length && !loading" class="empty"><h3>从一个具体问题开始</h3><p>涉及学校或组织时，请在问题中明确说明。</p></div>
+      <div v-if="!messages.length && !loading" class="empty"><h3>从一个具体推送问题开始</h3><p>排查具体问题时，请说明应用、终端平台或通道、发生时间和异常现象。</p></div>
       <article v-for="item in messages" :key="item.id" class="message"><h3>{{ item.question }}</h3><span class="tag">{{ statusNames[item.status] ?? item.status }}</span><span v-if="item.status === 'generating'" class="muted small">正在生成，内容尚未校验</span><p class="answer">{{ item.answer }}</p>
         <details v-for="citation in item.citations" :key="citation.label"><summary>{{ citation.label }} · {{ citation.organization }} · {{ citation.title }}</summary><blockquote>{{ citation.text }}</blockquote><p class="small">位置：{{ JSON.stringify(citation.locator) }}</p><button @click="getFile(citation.version_id)">下载引用原文</button></details>
       </article>

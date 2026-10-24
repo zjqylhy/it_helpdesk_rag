@@ -2,6 +2,10 @@
 
 当前演示语料为推送接入、指标口径、内容审核和排查经验，面向同组研发及相关业务方同事。语料位于 [knowledge/push](knowledge/push/README.md)，共 9 个主题、18 篇文档，来自原创模拟手册及官方公开资料的简短转述，不包含公司内部原文。应用架构保持原有实现；历史 IT 语料的离线评测结果不代表本套推送语料的效果。
 
+在线身份、范围判断、多轮改写、证据判断、回答及页面统一采用推送场景表述，缺条件时提示补充应用、平台/通道、时间和异常现象。存储与接口保留 `organization` 兼容字段，界面含义为“适用业务范围”，不代表阅读权限。范围过大时提示缩小知识主题。实现与验证见 [口径统一记录](docs/push-domain-unification.md)。
+
+评测术语：历史 `dev` 是用于比较提示词与检索方案的“方案对比评测集”，`test` 是保留的“独立验证集”，均不表示模型训练或权重调参。当前推送 12 题是“功能验收样例”；协议替身案例属于自动化测试。各类结果分别报告，不混称为模型准确率。
+
 Python 知识问答应用：FastAPI 业务 API、LangGraph 问答编排、独立 Python Worker、Vue 3/TypeScript、PostgreSQL/pgvector。在线应用统一在 `rewrite/`，已移除 Go 服务、旧前端和内部转发链。
 
 保留登录、用户组与文档权限、知识库与版本管理、文件上传和异步入库、多库问答、引用原文下载、会话历史、幂等和撤权中止。问答由 API 内异步任务执行，页面每秒查询进度；切页、刷新、断网或关闭标签页不取消已受理任务，返回后继续查看原消息。主动停止、权限失效、超时及服务关闭仍会终止任务；API 重启不自动续跑。当前运行基线策略；覆盖补查和独立回答检查仍按 [原规格](docs/redesign/spec.md) 后续推进。
@@ -61,6 +65,6 @@ $env:HD_TEST_DATABASE_URL = 'postgresql://USER:PASSWORD@127.0.0.1:PORT/postgres'
 
 2026-10-18 已将服务器主入口切换为 Python，原账号与知识/历史保留，详见 [实际部署记录](docs/python-deployment-20261018.md)。
 
-2026-10-21 已接入 [正式 HTTPS 站点](https://helpdesk-rag.linhengyi.xyz) 并展示 ICP 备案号，公网登录、历史与引用下载已验证，真实问答待人工验收。详见 [公网发布记录](docs/public-https-deployment-20261021.md) 和 [维护说明](docs/public-https.md)。
+2026-10-21 已接入 [正式 HTTPS 站点](https://helpdesk-rag.linhengyi.xyz) 并展示 ICP 备案号。该次发布核验公网登录、历史与引用下载；后续推送语料真实问答样例单列于 [推送发布记录](docs/push-knowledge-deployment-20261024.md)，不将公网可用性当作答案质量。维护方式见 [公网发布记录](docs/public-https-deployment-20261021.md) 和 [维护说明](docs/public-https.md)。
 
 正式模型网关已统一切换到 `https://api.linhengyi.xyz/v1`；API、Worker 的实际客户端认证访问及公网基础业务验证通过，付费推理调用为 0。详见 [网关切换记录](docs/gateway-domain-deployment-20261021.md)。

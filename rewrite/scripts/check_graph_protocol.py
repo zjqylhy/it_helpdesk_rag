@@ -1,4 +1,4 @@
-"""新旧图的隔离外部契约核对；不连接数据库，不调用真实模型。"""
+"""推送图的冻结外部契约核对；历史 IT 协议可单独复核，不调用真实模型。"""
 
 import asyncio
 import argparse
@@ -25,8 +25,8 @@ FIXTURES = ROOT / "rewrite/backend/tests/fixtures"
 REFERENCE = "096a19b"
 
 
-def inputs():
-    data = json.loads((FIXTURES / "scope-wire-input.json").read_text(encoding="utf-8"))
+def inputs(filename="push-wire-input.json"):
+    data = json.loads((FIXTURES / filename).read_text(encoding="utf-8"))
     return [
         {
             **item,
@@ -203,9 +203,7 @@ async def current(fixtures):
                         "selected_ids": outcome.trace.get("context_ids", []),
                         "fused_ids": outcome.trace.get("fused_ids", []),
                         "status": outcome.status,
-                        "answer": outcome.answer
-                        if outcome.status == "completed"
-                        else "",
+                        "answer": outcome.answer,
                     }
                 )
                 ledger.close()
@@ -224,10 +222,10 @@ def main():
     args = parser.parse_args()
     fixtures = inputs()
     expected = json.loads(
-        (FIXTURES / "scope-wire-expected.json").read_text(encoding="utf-8")
+        (FIXTURES / "push-wire-expected.json").read_text(encoding="utf-8")
     )
     source = json.loads(
-        (FIXTURES / "scope-wire-input.json").read_text(encoding="utf-8")
+        (FIXTURES / "push-wire-input.json").read_text(encoding="utf-8")
     )
     assert (
         expected["input_hash"]
@@ -237,9 +235,10 @@ def main():
             ).encode()
         ).hexdigest()
     )
-    old = legacy(fixtures) if args.live_reference else expected["results"]
     if args.live_reference:
-        assert old == expected["results"], "旧契约与冻结样本不同"
+        historical = json.loads((FIXTURES / "scope-wire-expected.json").read_text(encoding="utf-8"))
+        assert legacy(inputs("scope-wire-input.json")) == historical["results"], "历史 IT 协议与冻结样本不同"
+    old = expected["results"]
     with asyncio.Runner(
         loop_factory=asyncio.SelectorEventLoop
         if sys.platform == "win32"
@@ -253,14 +252,16 @@ def main():
                 differences.append({"id": left["id"], "field": field})
     folder = ROOT / "data" / ("rewrite-m3-protocol-" + uuid4().hex[:8])
     folder.mkdir(parents=True)
-    (folder / "legacy.json").write_text(
+    (folder / "expected.json").write_text(
         json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     (folder / "current.json").write_text(
         json.dumps(new, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     report = {
-        "reference_commit": REFERENCE,
+        "contract": "push-domain-v1",
+        "historical_reference_commit": REFERENCE,
+        "historical_reference_checked": args.live_reference,
         "fixtures": len(fixtures),
         "differences": differences,
         "model_network_calls": 0,

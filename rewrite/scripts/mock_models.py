@@ -32,7 +32,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 # 慢流给浏览器留出取消窗口；其他请求仍由服务线程处理。
                 if '中断' in prompt['question']: time.sleep(2)
-                for text in ['请打开', '设置 [C1]。']:
+                for text in ['请检查', '推送通知权限 [C1]。']:
                     self.wfile.write(('data: ' + json.dumps({'choices': [{'delta': {'content': text}, 'finish_reason': None}]}, ensure_ascii=False) + '\n\n').encode()); self.wfile.flush()
                     if text == '请打开' and '后台执行' in key: time.sleep(6)
                     time.sleep(.05)

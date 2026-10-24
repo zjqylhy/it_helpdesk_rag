@@ -50,6 +50,7 @@ class State(TypedDict, total=False):
     citations: list[Row]
     trace: Row
     outcome: Outcome
+    clarification_reason: str
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,7 @@ async def resolve_scope(state: State, runtime: Runtime[Context]) -> State:
                 query = value
         organization = ctx.scope.knowledge_bases[0]["organization"]
         return {
-            "query": f"适用组织：{organization}\n问题：{query}",
+            "query": f"适用业务范围：{organization}\n问题：{query}",
             "behavior": "search",
             "kb_ids": list(ctx.scope.kb_ids),
             "required": [],
@@ -117,7 +118,10 @@ async def resolve_scope(state: State, runtime: Runtime[Context]) -> State:
     ids = [key for key in ctx.scope.kb_ids if key in decision.kb_ids] or list(ctx.scope.kb_ids)
     required = [key for key in ids if key in readable] if decision.requires_all else []
     if len(required) > 5:
-        return {"behavior": "clarify", "kb_ids": ids, "required": []}
+        return {
+            "behavior": "clarify", "kb_ids": ids, "required": [],
+            "clarification_reason": "too_many_topics",
+        }
     return {
         "query": decision.query,
         "behavior": decision.behavior,
@@ -218,7 +222,7 @@ async def rerank(state: State, runtime: Runtime[Context]) -> State:
         return {"ranked": []}
     order = await runtime.context.models.rank(
         state["query"],
-        [f"知识库：{c.kb_name}；适用组织：{c.organization}；文档：{c.title}\n{c.text}" for c in fused],
+        [f"知识库：{c.kb_name}；适用业务范围：{c.organization}；文档：{c.title}\n{c.text}" for c in fused],
     )
     if sorted(order) != list(range(len(fused))):
         raise AppError("invalid_rerank", 502, "重排结果不完整")
@@ -320,12 +324,17 @@ async def validate_citations(state: State, runtime: Runtime[Context]) -> State:
 
 async def limited(state: State, runtime: Runtime[Context]) -> State:
     clarify = state["behavior"] == "clarify"
-    names = list(dict.fromkeys(k["organization"] for k in runtime.context.scope.knowledge_bases))
-    message = (
-        ("请明确学校、组织或适用条件" + ("，当前可查询：" + "、".join(names) if names else "") + "。")
-        if clarify
-        else "当前授权资料不足，无法回答该问题。"
-    )
+    ids = state.get("kb_ids", list(runtime.context.scope.kb_ids))
+    topics = list(dict.fromkeys(k["name"] for k in runtime.context.scope.knowledge_bases if k["id"] in ids))
+    if not clarify:
+        message = "当前授权的推送资料不足，无法回答该问题。"
+    elif state.get("clarification_reason") == "too_many_topics":
+        # 范围过大时应缩小主题，而不是要求补充与问题无关的业务条件。
+        message = "本次需要比较的资料主题超过 5 个，请缩小到最多 5 个主题后再提问。"
+    else:
+        message = "请补充推送所属应用、终端平台或通道、发生时间及具体异常现象。"
+    if clarify and topics:
+        message += "当前可查询主题：" + "、".join(topics) + "。"
     emit(
         runtime,
         "evidence",
