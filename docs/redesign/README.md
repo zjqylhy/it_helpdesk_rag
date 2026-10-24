@@ -1,5 +1,7 @@
 # 全栈重新设计与实现入口
 
+2026-10-25 更新：[按实际影响处理授权变更](selective-authorization/spec.md)的需求及方案已确认，改为只中断实际失权任务；实现与本地验证见[实施记录](selective-authorization/implementation.md)，待人工验收。
+
 > 本目录保留原 IT 语料下的历史设计与评测记录；其中 `dev` 指应用方案对比评测集，`test` 指保留的独立验证集，不涉及模型训练或权重调参。历史学校/VPN 示例及当时的状态不代表当前推送业务口径。当前入口、提示词与页面说明见 [项目 README](../../README.md) 和 [推送场景口径统一](../push-domain-unification.md)。
 
 2026-10-18 更新：在线源码和根运行入口已统一到 Python，新旧源码清理与验证见 [迁移记录](../python-unification.md)。下文保留原阶段记录；后续已授权并完成生产数据迁移和主入口 3000 切换，见 [实际部署记录](../python-deployment-20261018.md)。

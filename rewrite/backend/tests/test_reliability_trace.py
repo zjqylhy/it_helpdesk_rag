@@ -46,6 +46,9 @@ async def test_failure_preserves_only_completed_stage_observations(tmp_path, sta
     ]
 
     class Corpus:
+        async def metadata(self, principal, scope):
+            return scope
+
         async def chunks(self, principal, scope, kb):
             return [c for c in chunks if c.kb_id == kb]
 

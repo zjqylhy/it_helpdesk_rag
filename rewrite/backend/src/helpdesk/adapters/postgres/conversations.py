@@ -1,3 +1,4 @@
+from helpdesk.application.authorization import DEPENDENCY_SCHEMA
 from helpdesk.domain.errors import conflict
 from helpdesk.domain.models import Principal, Row, new_id
 
@@ -28,7 +29,8 @@ class Conversations(Queries):
         )
 
     async def provenance_visible(self, principal: Principal, provenance: Row) -> bool:
-        if principal.role == "admin":
+        tracked = provenance.get("schema") == DEPENDENCY_SCHEMA
+        if principal.role == "admin" and not tracked:
             return True
         version_ids = provenance.get("version_ids", [])
         kb_ids = provenance.get("kb_ids", [])
@@ -37,7 +39,7 @@ class Conversations(Queries):
         if version_ids:
             rows = await self.many(
                 f"""SELECT v.id FROM document_versions v JOIN documents d ON d.id=v.document_id
-                WHERE v.id=ANY(%s) AND {VISIBLE}""",
+                WHERE v.id=ANY(%s) AND d.enabled AND {VISIBLE}""",
                 (version_ids, principal.role, principal.user_id),
             )
             if {r["id"] for r in rows} != set(version_ids):
@@ -55,7 +57,7 @@ class Conversations(Queries):
             and isinstance(scope_hash, str)
             and len(scope_hash) == 64
         )
-        return bool(version_ids or kb_ids or bound_empty)
+        return bool(version_ids or kb_ids or bound_empty or tracked)
 
     async def admit(
         self, session_id: str, request_id: str, question: str, principal: Principal

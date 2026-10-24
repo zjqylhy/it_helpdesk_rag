@@ -45,7 +45,7 @@ class AccessService:
                         "password_changed": password is not None,
                     },
                 )
-            self.barrier.revoke(revision)
+            await self.barrier.recheck()
         return revision
 
     def __init__(self, uow: UnitOfWork, barrier: AuthorizationBarrier) -> None:
@@ -76,8 +76,8 @@ class AccessService:
                 else:
                     raise AppError("invalid_action", 400, "不支持的权限操作")
                 revision = await repos.access.audit(principal.user_id, action, target, details)
-            # 退出事务即提交；随后仍在写屏障内撤销旧运行，最后才响应成功。
-            self.barrier.revoke(revision)
+            # 退出事务即提交；仍在写屏障内只取消实际失权的运行。
+            await self.barrier.recheck()
             return {**result, "authorization_revision": revision}
 
     async def list(self, principal: Principal, kind: str) -> list[Row]:

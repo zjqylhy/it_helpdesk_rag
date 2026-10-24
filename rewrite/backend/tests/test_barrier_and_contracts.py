@@ -32,7 +32,7 @@ async def test_cancelled_writer_does_not_block_future_requests():
             pass
 
 
-async def test_policy_commit_cancels_registered_old_run(client, admin, app, database):
+async def test_unrelated_policy_commit_keeps_authorized_run(client, admin, app, database):
     services = app.state.services
     ready = asyncio.Event()
 
@@ -42,16 +42,23 @@ async def test_policy_commit_cancels_registered_old_run(client, admin, app, data
 
     task = asyncio.create_task(run())
     await ready.wait()
+    checks = []
+
+    async def check():
+        checks.append(True)
+
     async with services.barrier.read(), services.uow() as repos:
         revision = await repos.access.revision()
-        services.barrier.register("private-run", revision, task)
+        services.barrier.register("private-run", check, task)
     response = await client.post("/api/v1/admin/groups", headers=admin, json={"name": "revoke-trigger"})
     assert response.status_code == 204
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    assert checks == [True] and not task.done() and not task.cancelling()
     async with services.uow() as repos:
         assert await repos.access.revision() > revision
     services.barrier.unregister("private-run")
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 async def test_response_guard_blocks_metadata_computed_before_revoke(

@@ -77,12 +77,13 @@ async def admit(state: State, runtime: Runtime[Context]) -> State:
 
 async def resolve_scope(state: State, runtime: Runtime[Context]) -> State:
     ctx = runtime.context
+    scope = await ctx.corpus.metadata(ctx.run.principal, ctx.scope)
     emit(runtime, "status", {"stage": "understanding", "message": "正在确认问题范围"})
-    if not ctx.scope.kb_ids or not ctx.scope.version_ids:
+    if not scope.kb_ids or not scope.version_ids:
         return {"behavior": "refuse", "kb_ids": [], "required": []}
     query = state["query"]
-    readable = {s["kb_id"] for s in ctx.scope.snapshots if set(s["version_ids"]) & set(ctx.scope.version_ids)}
-    metadata = [kb for kb in ctx.scope.knowledge_bases if kb["id"] in readable]
+    readable = {kb["id"] for kb in scope.knowledge_bases}
+    metadata = list(scope.knowledge_bases)
     if len(ctx.scope.kb_ids) == 1:
         if ctx.run.history:
             rewrite = await ctx.models.structured(
@@ -91,7 +92,7 @@ async def resolve_scope(state: State, runtime: Runtime[Context]) -> State:
             value = rewrite.get("query")
             if isinstance(value, str) and value.strip() and len(value) <= 8000:
                 query = value
-        organization = ctx.scope.knowledge_bases[0]["organization"]
+        organization = scope.knowledge_bases[0]["organization"]
         return {
             "query": f"适用业务范围：{organization}\n问题：{query}",
             "behavior": "search",

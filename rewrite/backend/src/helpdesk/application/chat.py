@@ -4,6 +4,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 
+from helpdesk.application.authorization import RunAuthorization, RunDependencies, TrackedCorpus
 from helpdesk.application.barrier import AuthorizationBarrier
 from helpdesk.application.identity import digest_token
 from helpdesk.application.model_session import Budget, ModelSession
@@ -25,9 +26,9 @@ MAX_ANSWER_BYTES = 256 * 1024
 class Prepared:
     run: ChatRunInput
     scope: BoundScope
-    token: str
     run_id: str
     started: float
+    authorization: RunAuthorization
     first_progress_ms: float | None = None
     server_ttft_ms: float | None = None
 
@@ -98,9 +99,12 @@ class ChatService:
                     await self.guard(prepared)
                     if self._closing:
                         raise AppError("shutting_down", 503, "服务正在关闭，请稍后重试")
-                    task = asyncio.create_task(self._execute(prepared, runner))
+                    execution_started = asyncio.Event()
+                    task = asyncio.create_task(self._execute(prepared, runner, execution_started))
                     self._runs[prepared.run.message_id] = task
-                    self.barrier.register(prepared.run.message_id, prepared.scope.revision, task)
+                    self.barrier.register(prepared.run.message_id, prepared.authorization.check, task)
+                    # 先进入执行器的清理保护区，避免首次调度前撤权留下 generating 孤儿。
+                    await execution_started.wait()
             except BaseException:
                 await self.store.abort(prepared.run.message_id, "error", "admission_failed")
                 await self.ledger.finish_run(prepared.run_id, "error", {"stop_reason": "admission_failed"})
@@ -154,7 +158,9 @@ class ChatService:
             except TimeoutError:
                 LOGGER.error("问答关闭清理超时，未完成状态由启动恢复收束")
 
-    async def _execute(self, prepared: Prepared, runner: GraphRunner) -> None:
+    async def _execute(
+        self, prepared: Prepared, runner: GraphRunner, execution_started: asyncio.Event
+    ) -> None:
         key = prepared.run.message_id
         answer = ""
         saved = ""
@@ -193,6 +199,7 @@ class ChatService:
             await asyncio.gather(*children, return_exceptions=True)
 
         try:
+            execution_started.set()
             producer = asyncio.create_task(collect())
             writer = asyncio.create_task(flush())
             children = [producer, writer]
@@ -234,7 +241,12 @@ class ChatService:
                 if isinstance(error, TimeoutError)
                 else "generation_failed"
             )
-            status = "interrupted" if isinstance(error, asyncio.CancelledError) else "error"
+            status = (
+                "interrupted"
+                if code == "authorization_changed"
+                or (isinstance(error, asyncio.CancelledError) and code != "authorization_check_failed")
+                else "error"
+            )
             try:
                 async with asyncio.timeout(5):
                     actual_status = await self.store.abort(key, status, code)
@@ -275,7 +287,7 @@ class ChatService:
                 revision = await repos.access.revision()
             requested = tuple(session["kb_ids"] or ([session["kb_id"]] if session["kb_id"] else []))
             scope = await self.corpus.bind(current, requested, revision)
-            message, history = await self.store.prepare(
+            message, history, provenance = await self.store.prepare(
                 current, session_id, request_id, question, scope, "baseline"
             )
             try:
@@ -308,20 +320,23 @@ class ChatService:
             "baseline",
             started + self.settings.request_timeout,
         )
-        return Prepared(run, scope, token, run_id, started)
+        dependencies = RunDependencies()
+        dependencies.include(provenance)
+        authorization = RunAuthorization(
+            self.uow, self.barrier, self.corpus, self.store, current, digest_token(token),
+            message["id"], scope, dependencies,
+        )
+        return Prepared(run, scope, run_id, started, authorization)
 
     async def guard(self, prepared: Prepared) -> None:
         if time.monotonic() >= prepared.run.deadline:
             raise AppError("deadline", 504, "请求达到时间上限")
-        async with self.uow() as repos:
-            current = await repos.identity.principal(digest_token(prepared.token))
-        if current is None:
-            raise AppError("authorization_changed", 409, "登录或权限已失效")
-        await self.corpus.check(current, prepared.scope)
+        await prepared.authorization.check()
 
     def runner(self, prepared: Prepared) -> GraphRunner:
         async def guard() -> None:
-            await self.guard(prepared)
+            async with self.barrier.read():
+                await self.guard(prepared)
 
         models = ModelSession(
             self.provider,
@@ -331,7 +346,8 @@ class ChatService:
             prepared.run_id,
         )
         return GraphRunner(
-            Context(prepared.run, prepared.scope, models, self.corpus, self.cpu, self.cpu_slots)
+            Context(prepared.run, prepared.scope, models, TrackedCorpus(prepared.authorization),
+                    self.cpu, self.cpu_slots)
         )
 
     def public_summary(self, prepared: Prepared, runner: GraphRunner, reason: str = "finished") -> Row:

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from helpdesk.domain.errors import AppError
@@ -13,7 +13,7 @@ class AuthorizationBarrier:
         self._readers = 0
         self._writer = False
         self._waiting = 0
-        self._runs: dict[str, tuple[int, asyncio.Task[object]]] = {}
+        self._runs: dict[str, tuple[Callable[[], Awaitable[None]], asyncio.Task[object]]] = {}
 
     @asynccontextmanager
     async def read(self) -> AsyncIterator[None]:
@@ -44,17 +44,29 @@ class AuthorizationBarrier:
                 self._writer = False
                 self._condition.notify_all()
 
-    def register(self, request_id: str, revision: int, task: asyncio.Task[object]) -> None:
+    def register(
+        self, request_id: str, check: Callable[[], Awaitable[None]], task: asyncio.Task[object]
+    ) -> None:
         # 调用者必须在准入读屏障中完成数据库复核和注册，不能只先注册后检查。
         if request_id in self._runs:
             raise AppError("request_active", 409, "请求正在执行")
-        self._runs[request_id] = (revision, task)
+        self._runs[request_id] = (check, task)
 
     def unregister(self, request_id: str) -> None:
         self._runs.pop(request_id, None)
 
-    def revoke(self, revision: int) -> None:
-        for old_revision, task in tuple(self._runs.values()):
-            # 已在取消的任务需要完成终态清理，连续撤权不能再次打断它。
-            if old_revision < revision and not task.cancelling():
-                task.cancel("authorization_changed")
+    async def recheck(self) -> None:
+        # 调用者持有写屏障；复核回调不得再次申请读屏障。
+        for check, task in tuple(self._runs.values()):
+            if task.done() or task.cancelling():
+                continue
+            try:
+                async with asyncio.timeout(6):
+                    await check()
+            except Exception as error:
+                code = (
+                    "authorization_changed"
+                    if isinstance(error, AppError) and error.code == "authorization_changed"
+                    else "authorization_check_failed"
+                )
+                task.cancel(code)

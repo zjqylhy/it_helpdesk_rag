@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import psycopg
 from psycopg_pool import AsyncConnectionPool
@@ -24,7 +25,9 @@ class PostgresCorpus:
         async with self.pool.connection() as conn:
             await conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             queries = Queries(conn)
-            await self._revision(queries, principal, revision)
+            principal = await self._current(queries, principal)
+            state = await queries.require("SELECT revision FROM authorization_state WHERE id=1")
+            revision = int(state["revision"])
             available = await Catalog(conn).knowledge_bases(principal)
             allowed = {k["id"] for k in available}
             if not set(kb_ids).issubset(allowed):
@@ -67,19 +70,10 @@ class PostgresCorpus:
                 ),
             )
 
-    async def _revision(self, queries: Queries, principal: Principal, revision: int) -> None:
-        row = await queries.one(
-            """SELECT a.revision,u.disabled FROM authorization_state a
-            JOIN users u ON u.id=%s WHERE a.id=1""",
-            (principal.user_id,),
-        )
-        if not row or row["disabled"] or row["revision"] != revision:
-            raise AppError("authorization_changed", 409, "权限已变化，请重新提问")
-
     async def check(self, principal: Principal, scope: BoundScope) -> None:
         async with self.pool.connection() as conn:
             queries = Queries(conn)
-            await self._revision(queries, principal, scope.revision)
+            principal = await self._current(queries, principal)
             rows = await queries.many(
                 f"""SELECT v.id FROM document_versions v JOIN documents d ON d.id=v.document_id
                 WHERE v.id=ANY(%s) AND d.enabled AND {VISIBLE}""",
@@ -87,13 +81,37 @@ class PostgresCorpus:
             )
             if {r["id"] for r in rows} != set(scope.version_ids):
                 raise AppError("authorization_changed", 409, "资料访问权限已变化")
+            visible = {kb["id"] for kb in await Catalog(conn).knowledge_bases(principal)}
+            if not set(scope.kb_ids).issubset(visible):
+                raise AppError("authorization_changed", 409, "知识库访问权限已变化")
+
+    async def _current(self, queries: Queries, principal: Principal) -> Principal:
+        row = await queries.one("SELECT id,username,role,usage_kind,disabled FROM users WHERE id=%s",
+                                (principal.user_id,))
+        if not row or row["disabled"]:
+            raise AppError("authorization_changed", 409, "账号已失效")
+        return Principal(row["id"], row["username"], row["role"], row["usage_kind"])
+
+    async def metadata(self, principal: Principal, scope: BoundScope) -> BoundScope:
+        async with self.pool.connection() as conn:
+            queries = Queries(conn)
+            principal = await self._current(queries, principal)
+            versions = await queries.many(
+                f"""SELECT v.id,d.kb_id FROM document_versions v JOIN documents d ON d.id=v.document_id
+                WHERE v.id=ANY(%s) AND d.kb_id=ANY(%s) AND d.enabled AND {VISIBLE} ORDER BY v.id""",
+                (list(scope.version_ids), list(scope.kb_ids), principal.role, principal.user_id),
+            )
+            readable = {row["kb_id"] for row in versions}
+            # 元数据沿用启动时的值，不将后来的增权、新版或组织变化混入旧任务。
+            return replace(scope, version_ids=tuple(row["id"] for row in versions),
+                           knowledge_bases=tuple(kb for kb in scope.knowledge_bases if kb["id"] in readable))
 
     async def chunks(self, principal: Principal, scope: BoundScope, kb_id: str) -> list[Chunk]:
         if kb_id not in scope.kb_ids:
             raise AppError("invalid_scope", 400, "检索范围无效")
         async with self.pool.connection() as conn:
             queries = Queries(conn)
-            await self._revision(queries, principal, scope.revision)
+            principal = await self._current(queries, principal)
             rows = await queries.many(
                 CHUNK_SELECT
                 + f""" WHERE c.version_id=ANY(%s) AND d.kb_id=%s
@@ -107,7 +125,7 @@ class PostgresCorpus:
         await self.check(principal, scope)
         async with self.pool.connection() as conn:
             queries = Queries(conn)
-            await self._revision(queries, principal, scope.revision)
+            principal = await self._current(queries, principal)
             return await queries.many(
                 CHUNK_SELECT.replace(" FROM chunks", ",md5(c.embedding::text) AS vector_hash FROM chunks")
                 + f" WHERE c.version_id=ANY(%s) AND d.enabled AND {VISIBLE} ORDER BY c.id",
@@ -121,7 +139,7 @@ class PostgresCorpus:
             raise AppError("invalid_scope", 400, "检索范围无效")
         async with self.pool.connection() as conn:
             queries = Queries(conn)
-            await self._revision(queries, principal, scope.revision)
+            principal = await self._current(queries, principal)
             rows = await queries.many(
                 CHUNK_SELECT
                 + f""" WHERE c.version_id=ANY(%s) AND d.kb_id=%s
@@ -135,7 +153,7 @@ class PostgresCorpus:
         await self.check(principal, scope)
         async with self.pool.connection() as conn:
             queries = Queries(conn)
-            await self._revision(queries, principal, scope.revision)
+            principal = await self._current(queries, principal)
             return await queries.many(
                 CHUNK_SELECT.replace(
                     " FROM chunks",

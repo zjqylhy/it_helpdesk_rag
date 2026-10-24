@@ -14,6 +14,40 @@ from helpdesk.domain.rag import Usage
 from helpdesk.settings import Settings
 
 
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_permission_loss_during_attempt_reservation_prevents_provider_send(
+    tmp_path, monkeypatch, streaming,
+):
+    provider = FakeModels()
+    ledger = ExperimentLedger(tmp_path / "dispatch.sqlite", 4, 100000)
+    revoked = False
+    original = ledger.start_attempt
+
+    async def guard():
+        if revoked:
+            raise AppError("authorization_changed", 409, "权限已变化")
+
+    async def reserve(*args):
+        nonlocal revoked
+        attempt = await original(*args)
+        revoked = True
+        return attempt
+
+    monkeypatch.setattr(ledger, "start_attempt", reserve)
+    session = ModelSession(provider, Budget(time.monotonic() + 10), guard, ledger, "dispatch")
+    try:
+        with pytest.raises(AppError) as error:
+            if streaming:
+                _ = [text async for text in session.generate("system", {})]
+            else:
+                await session.embed(["protected content"])
+        assert error.value.code == "authorization_changed"
+        assert provider.calls == []
+        assert ledger.conn.execute("SELECT status FROM attempts").fetchone() == ("error",)
+    finally:
+        ledger.close()
+
+
 def settings():
     return Settings(
         database_url="postgresql://unused",
