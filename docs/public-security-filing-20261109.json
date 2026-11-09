@@ -1,0 +1,33 @@
+{
+  "app": "rag",
+  "source_commit": "ddc72442d09e1392f5f95ee2b01c148b6a2dbda3",
+  "archive_sha256": "356229b3ec3d7492ba0220d08238cc88de96e1e70c15099f3263a76c55648079",
+  "release": "/opt/it-helpdesk-public-security-20261109-ddc7244-r2",
+  "model_calls": 0,
+  "state": "published",
+  "public_file_count": 4,
+  "nginx_configuration": "unchanged; syntax passed",
+  "old_image": "helpdesk-python-web:411c495",
+  "new_image": "helpdesk-python-web:public-security-ddc7244",
+  "new_image_id": "sha256:5c14e69b19b0a975f9e8f1756ef20328308910db4f4f25fbca1fecbc0324bd1f",
+  "unchanged_other_containers": 8,
+  "env_unchanged": true,
+  "runtime_configuration_unchanged": true,
+  "checks": [
+    "public file hashes",
+    "homepage 200",
+    "unauthenticated identity 401"
+  ],
+  "proxy_ip_before": "172.21.0.5",
+  "proxy_ip_after": "172.21.0.5",
+  "public_browser_checks": 4,
+  "browser_widths": [
+    1440,
+    768,
+    390,
+    320
+  ],
+  "browser_authenticated_scope": "Local mocked sessions; production login page only",
+  "manual_acceptance": "pending",
+  "url": "https://helpdesk-rag.linhengyi.xyz/"
+}
